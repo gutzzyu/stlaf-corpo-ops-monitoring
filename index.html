@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>STLAF Mission Control</title>
+    <script>
+      // Prevent libraries from crashing when trying to polyfill fetch in restricted iframes
+      try {
+        const originalFetch = window.fetch;
+        if (originalFetch) {
+          Object.defineProperty(window, 'fetch', {
+            get: () => originalFetch,
+            set: () => { console.warn('Blocked attempt to overwrite window.fetch'); },
+            configurable: true
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to secure fetch getter:', e);
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

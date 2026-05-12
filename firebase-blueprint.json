@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information and roles",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "department": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "OperationalEntry": {
+      "title": "Operational Entry",
+      "description": "Consolidated liaison operational record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "department": { "type": "string" },
+        "destination": { "type": "string" },
+        "purpose": { "type": "string" },
+        "scheduleDate": { "type": "string", "format": "date" },
+        "requestedCashAdvance": { "type": "number" },
+        "transportationDetails": { "type": "string" },
+        "operationalEstimates": { "type": "string" },
+        "remarks": { "type": "string" },
+        "status": { "type": "string", "enum": ["Draft", "Ongoing", "For Liquidation", "Submitted", "Approved", "Rejected"] },
+        "hasReimbursements": { "type": "boolean" },
+        "reimbursements": { "type": "array", "items": { "$ref": "Reimbursement" } },
+        "liquidationItems": { "type": "array", "items": { "$ref": "LiquidationItem" } },
+        "proofSlips": { "type": "array", "items": { "$ref": "ProofSlip" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "status", "employeeName", "department"]
+    },
+    "Reimbursement": {
+      "title": "Reimbursement Entry",
+      "type": "object",
+      "properties": {
+        "purpose": { "type": "string" },
+        "amount": { "type": "number" },
+        "remarks": { "type": "string" },
+        "attachmentUrl": { "type": "string" },
+        "fileName": { "type": "string" }
+      }
+    },
+    "LiquidationItem": {
+       "title": "Liquidation Item",
+       "type": "object",
+       "properties": {
+         "description": { "type": "string" },
+         "amount": { "type": "number" },
+         "receiptUrl": { "type": "string" },
+         "date": { "type": "string", "format": "date" },
+         "fileName": { "type": "string" }
+       }
+    },
+    "ProofSlip": {
+      "title": "Proof Slip",
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "amount": { "type": "number" },
+        "explanation": { "type": "string" },
+        "attachmentUrl": { "type": "string" },
+        "fileName": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Authenticated users and their roles"
+    },
+    "operational_entries/{entryId}": {
+      "schema": "OperationalEntry",
+      "description": "Main collection for all liaison operations"
+    }
+  }
+}

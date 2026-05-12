@@ -1,0 +1,99 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Hardened Primitives ---
+    function isSignedIn() { return request.auth != null; }
+    function isEmailVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    // Admin check: strictly look up role in users collection
+    function isAdmin() { 
+      return isSignedIn() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'; 
+    }
+
+    // --- User Profiles ---
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.uid == userId &&
+               data.email is string && data.email.size() <= 200 &&
+               data.role in ['user', 'admin'] &&
+               data.createdAt is timestamp;
+      }
+
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      
+      allow create: if isSignedIn() && 
+                      request.auth.uid == userId &&
+                      isValidUser(incoming()) && 
+                      (incoming().role == 'user' || (incoming().role == 'admin' && incoming().email == 'andrewmanuel310@gmail.com'));
+                      
+      allow update: if isSignedIn() && (
+                      (request.auth.uid == userId && 
+                       incoming().role == existing().role && 
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'department', 'updatedAt'])) ||
+                      isAdmin()
+                    );
+      
+      allow delete, list: if isAdmin();
+    }
+
+    // --- Operational Entries ---
+    match /operational_entries/{entryId} {
+      function isValidOperationalEntry(data) {
+        return data.userId is string && data.userId.size() <= 128 &&
+               data.employeeName is string && data.employeeName.size() <= 200 &&
+               data.department is string && data.department.size() <= 100 &&
+               data.status in ['Draft', 'Ongoing', 'For Liquidation', 'Submitted', 'Approved', 'Rejected'] &&
+               (data.requestedCashAdvance == null || data.requestedCashAdvance is number) &&
+               (!('reimbursements' in data) || data.reimbursements is list) &&
+               (!('liquidationItems' in data) || data.liquidationItems is list) &&
+               (!('proofSlips' in data) || data.proofSlips is list);
+      }
+
+      // Security Pillar 8: Secure List Queries
+      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow get: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+
+      allow create: if isSignedIn() && 
+                      incoming().userId == request.auth.uid &&
+                      isValidOperationalEntry(incoming()) &&
+                      incoming().status in ['Draft', 'Ongoing'] && // Allow starting mission immediately
+                      incoming().createdAt == request.time &&
+                      incoming().updatedAt == request.time;
+
+      allow update: if (
+        isSignedIn() && (
+          isAdmin() || (
+            existing().userId == request.auth.uid &&
+            isValidOperationalEntry(incoming()) &&
+            incoming().updatedAt == request.time &&
+            incoming().userId == existing().userId &&
+            incoming().createdAt == existing().createdAt &&
+            // Lock fields if terminal status or not in editable state
+            (
+              // Action: Edit Draft/Ongoing details
+              (existing().status in ['Draft', 'Ongoing'] && 
+               incoming().status in ['Draft', 'Ongoing', 'For Liquidation']) ||
+              
+              // Action: Submit for Liquidation to Submitted
+              (existing().status == 'For Liquidation' && 
+               incoming().status == 'Submitted' &&
+               incoming().diff(existing()).affectedKeys().hasAny(['reimbursements', 'liquidationItems', 'proofSlips', 'status', 'submittedAt', 'updatedAt']))
+            )
+          )
+        )
+      );
+
+      allow delete: if isAdmin();
+    }
+  }
+}
