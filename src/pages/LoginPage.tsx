@@ -12,9 +12,12 @@ const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
 
   const handleGoogleLogin = async () => {
-    setLoading(true);
     const provider = new GoogleAuthProvider();
+    
+    // Crucial: Call provider and popup as close to the click as possible
+    // Some browsers block popups if there is any async delay (like state updates) before the call.
     try {
+      setLoading(true);
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
@@ -36,9 +39,10 @@ const LoginPage: React.FC = () => {
         toast.success("Welcome back, Commander.");
       }
     } catch (error: any) {
+      setLoading(false);
       console.error("Login error:", error);
       if (error.code === 'auth/popup-blocked') {
-        toast.error("Shields active: Browser blocked the login popup. Please allow popups for this site.", { duration: 5000 });
+        toast.error("Shields active: Browser blocked the login popup. Please click your browser's address bar to allow popups for this site.", { duration: 8000 });
       } else if (error.code === 'auth/unauthorized-domain') {
         toast.error("Deployment restricted: This domain is not authorized in Firebase Console.", { duration: 6000 });
       } else {
