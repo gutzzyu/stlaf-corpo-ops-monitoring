@@ -9,14 +9,20 @@
       try {
         const originalFetch = window.fetch;
         if (originalFetch) {
+          let warningLogged = false;
           Object.defineProperty(window, 'fetch', {
             get: () => originalFetch,
-            set: () => { console.warn('Blocked attempt to overwrite window.fetch'); },
+            set: () => { 
+              if (!warningLogged) {
+                console.debug('Prevented attempt to overwrite window.fetch');
+                warningLogged = true;
+              }
+            },
             configurable: true
           });
         }
       } catch (e) {
-        console.warn('Failed to secure fetch getter:', e);
+        // Silently fail if defineProperty is not supported or restricted
       }
     </script>
   </head>

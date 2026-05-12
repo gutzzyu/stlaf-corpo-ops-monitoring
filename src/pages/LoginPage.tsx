@@ -26,7 +26,8 @@ const LoginPage: React.FC = () => {
         await setDoc(userDocRef, {
           uid: user.uid,
           email: user.email,
-          displayName: user.displayName,
+          displayName: user.displayName || 'Anonymous Agent',
+          department: 'Unassigned',
           role: isAdminEmail ? 'admin' : 'user',
           createdAt: serverTimestamp(),
         });
@@ -34,9 +35,15 @@ const LoginPage: React.FC = () => {
       } else {
         toast.success("Welcome back, Commander.");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login error:", error);
-      toast.error("Authentication override failed.");
+      if (error.code === 'auth/popup-blocked') {
+        toast.error("Shields active: Browser blocked the login popup. Please allow popups for this site.", { duration: 5000 });
+      } else if (error.code === 'auth/unauthorized-domain') {
+        toast.error("Deployment restricted: This domain is not authorized in Firebase Console.", { duration: 6000 });
+      } else {
+        toast.error("Authentication override failed.");
+      }
     } finally {
       setLoading(false);
     }
