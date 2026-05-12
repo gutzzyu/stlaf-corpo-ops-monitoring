@@ -2,13 +2,26 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import firebaseConfigLocal from '../../firebase-applet-config.json';
+
+// Support for external deployment (Vercel/Netlify) via environment variables
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfigLocal.apiKey,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigLocal.authDomain,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigLocal.projectId,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigLocal.storageBucket,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigLocal.messagingSenderId,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfigLocal.appId,
+};
 
 const app = initializeApp(firebaseConfig);
+const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || firebaseConfigLocal.firestoreDatabaseId;
+
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth();
+}, databaseId);
+
+export const auth = getAuth(app);
 export const storage = getStorage(app);
 
 export enum OperationType {
