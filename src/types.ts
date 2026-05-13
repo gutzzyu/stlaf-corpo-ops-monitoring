@@ -44,12 +44,16 @@ export interface OperationalEntry {
   userId: string;
   employeeName: string;
   department: string;
+  contactNumber: string;
+  accountName: string;
+  companyName: string;
+  contactPerson?: string;
   destination: string;
   purpose: string;
   scheduleDate: string;
+  destinationType: 'Within Metro Manila' | 'Outside Metro Manila';
+  outOfPocketExpense: number;
   requestedCashAdvance: number;
-  transportationDetails: string;
-  operationalEstimates: string;
   remarks: string;
   status: EntryStatus;
   

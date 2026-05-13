@@ -30,12 +30,16 @@ import { OperationalEntry, EntryStatus } from '../types';
 const formSchema = z.object({
   employeeName: z.string().min(2, "Name is required"),
   department: z.string().min(1, "Department is required"),
+  contactNumber: z.string().min(7, "Contact number is required"),
   destination: z.string().min(2, "Destination is required"),
   purpose: z.string().min(5, "Purpose is required"),
   scheduleDate: z.string().min(1, "Schedule date is required"),
+  accountName: z.string().min(2, "Account name is required"),
+  companyName: z.string().min(2, "Company name is required"),
+  contactPerson: z.string().optional(),
+  destinationType: z.enum(['Within Metro Manila', 'Outside Metro Manila']),
+  outOfPocketExpense: z.number(),
   requestedCashAdvance: z.coerce.number().min(0, "Amount cannot be negative"),
-  transportationDetails: z.string().min(2, "Transportation details required"),
-  operationalEstimates: z.string().min(2, "Estimates are required"),
   remarks: z.string().optional(),
 });
 
@@ -49,20 +53,34 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { register, handleSubmit, setValue, formState: { errors } } = useForm<z.infer<typeof formSchema>>({
+  const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema) as any,
     defaultValues: {
       employeeName: entry?.employeeName || user?.displayName || '',
       department: entry?.department || '',
+      contactNumber: entry?.contactNumber || '',
       destination: entry?.destination || '',
       purpose: entry?.purpose || '',
       scheduleDate: entry?.scheduleDate || new Date().toISOString().split('T')[0],
+      accountName: entry?.accountName || '',
+      companyName: entry?.companyName || '',
+      contactPerson: entry?.contactPerson || '',
+      destinationType: entry?.destinationType || 'Within Metro Manila',
+      outOfPocketExpense: entry?.outOfPocketExpense || 1000,
       requestedCashAdvance: entry?.requestedCashAdvance || 0,
-      transportationDetails: entry?.transportationDetails || '',
-      operationalEstimates: entry?.operationalEstimates || '',
       remarks: entry?.remarks || '',
     }
   });
+
+  const watchedDestinationType = watch('destinationType');
+
+  useEffect(() => {
+    if (watchedDestinationType === 'Within Metro Manila') {
+      setValue('outOfPocketExpense', 1000);
+    } else {
+      setValue('outOfPocketExpense', 1500);
+    }
+  }, [watchedDestinationType, setValue]);
 
   const saveEntry = async (values: z.infer<typeof formSchema>, status: EntryStatus) => {
     if (!user) return;
@@ -133,16 +151,16 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
         </CardHeader>
 
         <form onSubmit={handleSubmit(onSubmit)}>
-          <CardContent className="p-10 pt-4 space-y-10">
-            {/* Identity Group */}
+          <CardContent className="p-10 pt-4 space-y-12">
+            {/* SECTION 1 — Liaison Information */}
             <div className="space-y-6">
               <div className="flex items-center gap-2 border-b border-slate-50 pb-2">
                 <LayoutList className="h-4 w-4 text-slate-300" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Personnel & Dept</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">SECTION 1 — Liaison Information</span>
               </div>
               <div className="grid gap-6 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label className="micro-label">Lead Liaison Employee</Label>
+                  <Label className="micro-label">Employee Name</Label>
                   <Input 
                     {...register('employeeName')} 
                     placeholder="Full Name"
@@ -150,7 +168,7 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="micro-label">Operational Department</Label>
+                  <Label className="micro-label">Department</Label>
                   <Select onValueChange={(val) => setValue('department', val)} defaultValue={entry?.department}>
                     <SelectTrigger className="h-12 rounded-xl bg-slate-50 border-none font-bold text-navy-900">
                       <SelectValue placeholder="Select Division" />
@@ -164,26 +182,16 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-            </div>
-
-            {/* Mission Group */}
-            <div className="space-y-6">
-              <div className="flex items-center gap-2 border-b border-slate-50 pb-2">
-                <MapPin className="h-4 w-4 text-slate-300" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mission Parameters</span>
-              </div>
-              <div className="grid gap-6 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label className="micro-label">Primary Destination</Label>
+                  <Label className="micro-label">Contact Number</Label>
                   <Input 
-                    {...register('destination')} 
-                    placeholder="Location / Site Name"
+                    {...register('contactNumber')} 
+                    placeholder="09XX XXX XXXX"
                     className="h-12 rounded-xl bg-slate-50 border-none font-bold text-navy-900"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="micro-label">Deployment Date</Label>
+                  <Label className="micro-label">Schedule / Date of Activity</Label>
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                     <Input 
@@ -194,67 +202,140 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                   </div>
                 </div>
               </div>
+              
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="micro-label">Primary Destination</Label>
+                  <Input 
+                    {...register('destination')} 
+                    placeholder="Location / Site Name"
+                    className="h-12 rounded-xl bg-slate-50 border-none font-bold text-navy-900"
+                  />
+                </div>
+                <div className="space-y-2 text-right flex flex-col justify-end">
+                   <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-1">Filing Date</span>
+                   <span className="text-sm font-black text-navy-900">{new Date().toLocaleDateString()}</span>
+                </div>
+              </div>
+
               <div className="space-y-2">
-                <Label className="micro-label">Mission Objectives & Description</Label>
+                <Label className="micro-label">Purpose of Travel / Mission Objectives</Label>
                 <Textarea 
                   {...register('purpose')} 
                   placeholder="Detail the operational reasons for this deployment..."
                   className="min-h-[100px] rounded-2xl bg-slate-50 border-none font-medium leading-relaxed"
                 />
               </div>
-            </div>
 
-            {/* Logistics Group */}
-            <div className="space-y-6">
-              <div className="flex items-center gap-2 border-b border-slate-50 pb-2">
-                <Truck className="h-4 w-4 text-slate-300" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Logistics & Transportation</span>
-              </div>
-              <div className="space-y-2">
-                <Label className="micro-label">Transportation Mode & Details</Label>
-                <Textarea 
-                  {...register('transportationDetails')} 
-                  placeholder="e.g., Company Vehicle (Plate #), Grab, Public Transport with route details..."
-                  className="min-h-[80px] rounded-2xl bg-slate-50 border-none font-medium text-sm"
-                />
-              </div>
-            </div>
-
-            {/* Financial Group */}
-            <div className="space-y-6">
-              <div className="flex items-center gap-2 border-b border-slate-50 pb-2">
-                <CreditCard className="h-4 w-4 text-slate-300" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Financial Quantum</span>
-              </div>
-              <div className="grid gap-6 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label className="micro-label font-bold text-emerald-700 italic">Requested Cash Advance (PHP)</Label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-emerald-600">₱</span>
-                    <Input 
-                      type="number"
-                      step="0.01"
-                      {...register('requestedCashAdvance')} 
-                      className="h-14 pl-10 rounded-xl bg-emerald-50/50 border-none text-2xl font-black font-data text-emerald-900"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label className="micro-label">Operational Estimates / Breakdown</Label>
-                  <Textarea 
-                    {...register('operationalEstimates')} 
-                    placeholder="Gas, Parking, Food, Supplies, etc."
-                    className="min-h-[80px] rounded-xl bg-slate-50 border-none font-medium text-sm"
-                  />
-                </div>
-              </div>
               <div className="space-y-2">
                 <Label className="micro-label">Additional Remarks (Optional)</Label>
                 <Input 
                   {...register('remarks')} 
-                  placeholder="Any extra context for the approving officer..."
+                  placeholder="Any extra context for this liaison itinerary..."
                   className="h-12 rounded-xl bg-slate-50 border-none font-medium"
                 />
+              </div>
+            </div>
+
+            {/* SECTION 2 — Account / Company Information */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 border-b border-slate-50 pb-2">
+                <Sparkles className="h-4 w-4 text-slate-300" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">SECTION 2 — Account / Company Information</span>
+              </div>
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="micro-label">Account Name / Client Name</Label>
+                  <Input 
+                    {...register('accountName')} 
+                    placeholder="Identify the billing account"
+                    className="h-12 rounded-xl bg-slate-50 border-none font-bold text-navy-900"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="micro-label">Company Name</Label>
+                  <Input 
+                    {...register('companyName')} 
+                    placeholder="Linked Enterprise"
+                    className="h-12 rounded-xl bg-slate-50 border-none font-bold text-navy-900"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="micro-label">Optional Contact Person (Client Side)</Label>
+                <Input 
+                  {...register('contactPerson')} 
+                  placeholder="Name of POC at destination (Optional)"
+                  className="h-12 rounded-xl bg-slate-50 border-none font-bold text-navy-900"
+                />
+              </div>
+            </div>
+
+            {/* SECTION 3 — Out-of-Pocket Expense */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 border-b border-slate-50 pb-2">
+                <MapPin className="h-4 w-4 text-slate-300" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">SECTION 3 — Out-of-Pocket Expense</span>
+              </div>
+              <div className="grid gap-8 md:grid-cols-2 items-center">
+                <div className="space-y-4">
+                  <Label className="micro-label">Destination Type</Label>
+                  <div className="flex flex-col gap-3">
+                    {[
+                      { id: 'Manila', label: 'Within Metro Manila', val: 'Within Metro Manila' as const },
+                      { id: 'Provincial', label: 'Outside Metro Manila', val: 'Outside Metro Manila' as const }
+                    ].map((opt) => (
+                      <label 
+                        key={opt.id} 
+                        className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border-2 ${
+                          watchedDestinationType === opt.val 
+                            ? 'bg-navy-900 border-navy-900 text-white' 
+                            : 'bg-slate-50 border-transparent text-navy-900 hover:bg-slate-100'
+                        }`}
+                      >
+                         <div className="flex items-center gap-3">
+                            <input 
+                              type="radio" 
+                              className="hidden"
+                              value={opt.val}
+                              {...register('destinationType')}
+                            />
+                            <span className="font-black uppercase text-[10px] tracking-widest">{opt.label}</span>
+                         </div>
+                         {watchedDestinationType === opt.val && <div className="w-2 h-2 rounded-full bg-white shadow-lg" />}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                
+                <div className="p-8 rounded-[2rem] bg-indigo-50/50 border-2 border-indigo-100 flex flex-col items-center justify-center text-center space-y-2">
+                   <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Computed Operating Fee</span>
+                   <div className="text-4xl font-black font-data text-indigo-900">
+                      ₱{watch('outOfPocketExpense')?.toLocaleString()}
+                   </div>
+                   <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-tighter">Automatic Service Compensation</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Financial Quantum - Keeping Cash Advance as requested in title */}
+            <div className="space-y-6 pt-6 border-t-2 border-slate-50">
+              <div className="flex items-center gap-2 border-b border-slate-50 pb-2">
+                <CreditCard className="h-4 w-4 text-slate-300" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mission Budget Request</span>
+              </div>
+              <div className="space-y-2">
+                <Label className="micro-label font-bold text-emerald-700 italic">Requested Cash Advance (PHP)</Label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-emerald-600">₱</span>
+                  <Input 
+                    type="number"
+                    step="0.01"
+                    {...register('requestedCashAdvance')} 
+                    className="h-16 pl-10 rounded-2xl bg-emerald-50/50 border-none text-3xl font-black font-data text-emerald-900"
+                  />
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 micro-label opacity-20">Operational Funds</div>
+                </div>
               </div>
             </div>
 

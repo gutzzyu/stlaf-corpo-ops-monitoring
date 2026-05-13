@@ -10,11 +10,12 @@ import {
   CreditCard, 
   FileText, 
   Receipt,
-  Truck,
   CheckCircle2,
   Clock,
   ExternalLink,
-  Camera
+  Camera,
+  User,
+  Sparkles
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -59,12 +60,12 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
         </CardHeader>
 
         <CardContent className="p-10 space-y-12">
-          {/* Section 1: Parameters */}
+          {/* Section 1: Personnel & Account */}
           <div className="grid md:grid-cols-2 gap-12">
              <div className="space-y-6">
                 <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-blue-500" />
-                  <span className="text-xs font-black uppercase tracking-widest text-navy-900 italic">Objectives</span>
+                  <User className="h-4 w-4 text-blue-500" />
+                  <span className="text-xs font-black uppercase tracking-widest text-navy-900 italic">Personnel Info</span>
                 </div>
                 <div className="space-y-4">
                   <div>
@@ -73,43 +74,83 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
                     <p className="text-xs font-medium text-slate-400 italic">{entry.department}</p>
                   </div>
                   <div>
-                    <Label className="text-[10px] uppercase font-bold text-slate-400">Destination</Label>
-                    <div className="flex items-center gap-2 text-lg font-bold text-navy-900">
-                      <MapPin className="h-5 w-5 text-blue-500" />
-                      {entry.destination}
-                    </div>
-                  </div>
-                  <div>
-                    <Label className="text-[10px] uppercase font-bold text-slate-400">Purpose</Label>
-                    <p className="text-sm leading-relaxed text-slate-600 font-medium">{entry.purpose}</p>
+                    <Label className="text-[10px] uppercase font-bold text-slate-400">Contact Number</Label>
+                    <p className="text-sm font-bold text-navy-900">{entry.contactNumber}</p>
                   </div>
                 </div>
              </div>
 
              <div className="space-y-6">
                 <div className="flex items-center gap-2">
-                   <Truck className="h-4 w-4 text-amber-500" />
-                   <span className="text-xs font-black uppercase tracking-widest text-navy-900 italic">Logistics</span>
+                   <Sparkles className="h-4 w-4 text-amber-500" />
+                   <span className="text-xs font-black uppercase tracking-widest text-navy-900 italic">Account Reference</span>
                 </div>
                 <div className="space-y-4">
                    <div>
-                      <Label className="text-[10px] uppercase font-bold text-slate-400">Schedule</Label>
-                      <div className="flex items-center gap-2 text-navy-900 font-data font-bold">
-                         <Calendar className="h-4 w-4 text-slate-300" />
-                         {entry.scheduleDate}
-                      </div>
+                      <Label className="text-[10px] uppercase font-bold text-slate-400">Client / Account</Label>
+                      <p className="text-sm font-bold text-navy-900">{entry.accountName}</p>
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-tighter">{entry.companyName}</p>
                    </div>
-                   <div>
-                      <Label className="text-[10px] uppercase font-bold text-slate-400">Transportation Details</Label>
-                      <p className="text-sm text-slate-600 font-medium bg-slate-50 p-4 rounded-2xl italic leading-relaxed">
-                         {entry.transportationDetails}
-                      </p>
-                   </div>
+                   {entry.contactPerson && (
+                     <div>
+                        <Label className="text-[10px] uppercase font-bold text-slate-400">Contact Person</Label>
+                        <p className="text-sm font-medium text-navy-900">{entry.contactPerson}</p>
+                     </div>
+                   )}
                 </div>
              </div>
           </div>
 
-          {/* Section 2: Financials */}
+          {/* Section 2: Mission Parameters */}
+          <div className="space-y-6 pt-12 border-t border-slate-50">
+             <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-indigo-500" />
+                <span className="text-xs font-black uppercase tracking-widest text-navy-900 italic">Mission Scope</span>
+             </div>
+             
+             <div className="grid md:grid-cols-3 gap-8">
+                <div className="md:col-span-2 space-y-4">
+                   <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-[10px] uppercase font-bold text-slate-400">Destination</Label>
+                        <p className="text-lg font-bold text-navy-900">{entry.destination}</p>
+                        <Badge variant="secondary" className="mt-1 text-[8px] uppercase font-black">
+                           {entry.destinationType}
+                        </Badge>
+                      </div>
+                      <div>
+                        <Label className="text-[10px] uppercase font-bold text-slate-400">Schedule Date</Label>
+                        <div className="flex items-center gap-2 text-navy-900 font-data font-bold">
+                           <Calendar className="h-4 w-4 text-slate-300" />
+                           {entry.scheduleDate}
+                        </div>
+                      </div>
+                   </div>
+                   <div>
+                      <Label className="text-[10px] uppercase font-bold text-slate-400">Purpose</Label>
+                      <p className="text-sm leading-relaxed text-slate-600 font-medium bg-slate-50 p-4 rounded-2xl">
+                         {entry.purpose}
+                      </p>
+                   </div>
+                   {entry.remarks && (
+                     <div>
+                        <Label className="text-[10px] uppercase font-bold text-slate-400">Remarks</Label>
+                        <p className="text-xs text-slate-400 italic">"{entry.remarks}"</p>
+                     </div>
+                   )}
+                </div>
+
+                <div className="p-8 bg-indigo-50/50 rounded-[2.5rem] border-2 border-indigo-100 flex flex-col items-center justify-center text-center space-y-2">
+                   <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Operating Fee</span>
+                   <div className="text-3xl font-black font-data text-indigo-900">
+                      ₱{entry.outOfPocketExpense?.toLocaleString()}
+                   </div>
+                   <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-tighter">Liaison Service Comp</span>
+                </div>
+             </div>
+          </div>
+
+          {/* Section 3: Financials */}
           <div className="space-y-6 pt-12 border-t border-slate-50">
              <div className="flex items-center gap-2">
                 <CreditCard className="h-4 w-4 text-emerald-500" />
