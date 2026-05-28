@@ -1,22 +1,45 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './components/auth/AuthProvider';
 import LoginPage from './pages/LoginPage';
+import ProfileSetup from './pages/ProfileSetup';
 import UserDashboard from './pages/UserDashboard';
 import OperationalForm from './pages/OperationalForm';
 import LiquidationWorkflow from './pages/LiquidationWorkflow';
 import SummaryView from './pages/SummaryView';
 import AdminDashboard from './pages/AdminDashboard';
 import { Toaster } from './components/ui/sonner';
+import { toast } from 'sonner';
 import { LogOut, LayoutDashboard, ShieldCheck, User, Menu, X, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from './components/ui/button';
 import { OperationalEntry } from './types';
 
 function Navigation() {
-  const { user, loading, isAdmin } = useAuth();
+  const { user, loading, isAdmin, isProfileComplete } = useAuth();
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [activeEntry, setActiveEntry] = useState<OperationalEntry | undefined>(undefined);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setIsLoggingOut(false);
+    }
+  }, [user]);
+
+  const handleLogout = async () => {
+    try {
+      setIsLoggingOut(true);
+      const toastId = toast.loading("Disconnecting from STLAF Ops...");
+      const { auth } = await import('./lib/firebase');
+      await auth.signOut();
+      toast.success("Disconnected successfully.", { id: toastId });
+    } catch (error) {
+      console.error(error);
+      setIsLoggingOut(false);
+      toast.error("Failed to disconnect.");
+    }
+  };
 
   if (loading) return (
     <div className="flex h-screen items-center justify-center bg-white flex-col gap-4">
@@ -26,6 +49,7 @@ function Navigation() {
   );
   
   if (!user) return <LoginPage />;
+  if (!isProfileComplete) return <ProfileSetup />;
 
   const renderPage = () => {
     switch (currentPage) {
@@ -115,10 +139,11 @@ function Navigation() {
               <Button 
                 variant="ghost" 
                 size="icon"
-                onClick={() => import('./lib/firebase').then(({ auth }) => auth.signOut())}
+                disabled={isLoggingOut}
+                onClick={handleLogout}
                 className="rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50"
               >
-                <LogOut className="h-5 w-5" />
+                {isLoggingOut ? <div className="w-5 h-5 border-2 border-red-500 border-t-transparent rounded-full animate-spin" /> : <LogOut className="h-5 w-5" />}
               </Button>
             </div>
           </nav>
@@ -151,11 +176,12 @@ function Navigation() {
                   ))}
                   <Button 
                     variant="destructive" 
-                    className="w-full h-16 rounded-3xl font-black uppercase tracking-widest gap-2 bg-red-500 hover:bg-red-600"
-                    onClick={() => import('./lib/firebase').then(({ auth }) => auth.signOut())}
+                    disabled={isLoggingOut}
+                    className="w-full h-16 rounded-3xl font-black uppercase tracking-widest gap-2 bg-red-500 text-white hover:bg-red-600 hover:text-white disabled:opacity-50"
+                    onClick={handleLogout}
                   >
-                    Logout System
-                    <LogOut className="h-4 w-4" />
+                    {isLoggingOut ? "Disconnecting..." : "Logout System"}
+                    {isLoggingOut ? <div className="w-4 h-4 border-2 border-white/60 border-t-white rounded-full animate-spin" /> : <LogOut className="h-4 w-4" />}
                   </Button>
                </div>
             </motion.div>

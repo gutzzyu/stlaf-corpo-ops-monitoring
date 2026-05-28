@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType, getErrorMessage } from '../lib/firebase';
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -25,9 +25,16 @@ import {
   UserCog,
   Trash2,
   Lock,
-  Unlock
+  Unlock,
+  Clock,
+  ExternalLink,
+  Settings,
+  AlertCircle
 } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { exportToExcel } from '../lib/excelExport';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -48,6 +55,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   const [adminTab, setAdminTab] = useState<'missions' | 'personnel'>('missions');
   const [selectedEntry, setSelectedEntry] = useState<OperationalEntry | null>(null);
   const [statusFilter, setStatusFilter] = useState<EntryStatus | 'All'>('All');
+  
+  // Revision Dialog state
+  const [revisionEntryId, setRevisionEntryId] = useState<string | null>(null);
+  const [revisionNotes, setRevisionNotes] = useState('');
+  const [isRevisionLoading, setIsRevisionLoading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [saEmail, setSaEmail] = useState('');
+
+  useEffect(() => {
+    fetch('/api/service-account', { credentials: 'include' })
+      .then(async r => {
+        const text = await r.text();
+        try {
+          return JSON.parse(text);
+        } catch {
+          return {}; // Silently ignore HTML payloads like the cookie check for this minor info check
+        }
+      })
+      .then(d => setSaEmail(d?.email || ''))
+      .catch(console.error);
+  }, []);
 
   useEffect(() => {
     // Mission Listener
@@ -89,14 +117,102 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   }, []);
 
   const handleUpdateStatus = async (id: string, newStatus: EntryStatus) => {
+    if (newStatus === 'Needs Revision') {
+      setRevisionEntryId(id);
+      setRevisionNotes('');
+      return;
+    }
+
+    const toastId = toast.loading(`Marking entry as ${newStatus}...`);
     try {
+      const entry = entries.find(e => e.id === id);
+      if (!entry) throw new Error("Entry not found");
+
+      // Drive Logic
+      const token = localStorage.getItem('google_drive_token');
+      if (newStatus === 'Approved') {
+        if (!token) {
+          throw new Error("Google Drive session missing. Please log in with Google to approve and transfer files.");
+        }
+        toast.loading("Transferring attachments to official Google Drive...", { id: toastId });
+        const res = await fetch('/api/finalize-liquidation', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ entryId: id, entryData: entry })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: 'Finalization failed' }));
+          if (res.status === 401 || err.error === 'DRIVE_AUTH_ERROR') {
+             localStorage.removeItem('google_drive_token');
+             throw new Error("Google Drive session expired. Please refresh your connection by logging in again.");
+          }
+          throw new Error(err.message || err.error || "Failed to finalize Drive files");
+        }
+      }
+
       await updateDoc(doc(db, 'operational_entries', id), {
         status: newStatus,
         updatedAt: serverTimestamp()
       });
-      toast.success(`Entry marked as ${newStatus}`);
-    } catch (error) {
+      toast.success(`Entry marked as ${newStatus}`, { id: toastId });
+    } catch (error: any) {
+      toast.error(`Update failed: ${getErrorMessage(error)}`, { id: toastId });
       handleFirestoreError(error, OperationType.UPDATE, `operational_entries/${id}`);
+    }
+  };
+
+  const submitRevisionRequest = async () => {
+    if (!revisionEntryId || !revisionNotes.trim()) {
+      toast.error("Please provide revision notes.");
+      return;
+    }
+
+    setIsRevisionLoading(true);
+    const toastId = toast.loading("Processing revision request...");
+    try {
+      const entry = entries.find(e => e.id === revisionEntryId);
+      if (entry) {
+        const token = localStorage.getItem('google_drive_token');
+        if (!token) {
+          throw new Error("Google Drive session missing. Please reconnect to move files back to Pending.");
+        }
+
+        toast.loading("Ensuring attachments are in pending state...", { id: toastId });
+        const response = await fetch('/api/revert-to-pending', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ entryId: revisionEntryId, entryData: entry })
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          if (response.status === 401 || err.error === 'DRIVE_AUTH_ERROR') {
+            localStorage.removeItem('google_drive_token');
+            throw new Error("Google Drive session expired. Please reconnect.");
+          }
+          console.warn("Drive revert warning:", err);
+        }
+      }
+
+      await updateDoc(doc(db, 'operational_entries', revisionEntryId!), {
+        status: 'Needs Revision',
+        adminNotes: revisionNotes,
+        updatedAt: serverTimestamp()
+      });
+      toast.success("Entry sent back for revision.", { id: toastId });
+      setRevisionEntryId(null);
+      setRevisionNotes('');
+    } catch (error: any) {
+      toast.error(`Revision request failed: ${error.message || 'Unknown error'}`, { id: toastId });
+    } finally {
+      setIsRevisionLoading(false);
     }
   };
 
@@ -142,9 +258,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
 
   const getStatusBadge = (status: EntryStatus) => {
     switch (status) {
-      case 'Approved': return <Badge className="bg-emerald-500 text-white border-none rounded-sm px-2 text-[9px] uppercase font-black tracking-widest">Approved</Badge>;
+      case 'Approved':
+      case 'Completed': return <Badge className="bg-emerald-500 text-white border-none rounded-sm px-2 text-[9px] uppercase font-black tracking-widest">Completed</Badge>;
       case 'Rejected': return <Badge className="bg-red-500 text-white border-none rounded-sm px-2 text-[9px] uppercase font-black tracking-widest">Rejected</Badge>;
-      case 'Submitted': return <Badge className="bg-indigo-500 text-white border-none rounded-sm px-2 text-[9px] uppercase font-black tracking-widest">Submitted</Badge>;
+      case 'Needs Revision': return <Badge className="bg-orange-500 text-white border-none rounded-sm px-2 text-[9px] uppercase font-black tracking-widest">Needs Revision</Badge>;
+      case 'Submitted': return <Badge className="bg-indigo-500 text-white border-none rounded-sm px-2 text-[9px] uppercase font-black tracking-widest">Sent for Audit</Badge>;
       case 'Ongoing': return <Badge className="bg-blue-500 text-white border-none rounded-sm px-2 text-[9px] uppercase font-black tracking-widest">Ongoing</Badge>;
       case 'For Liquidation': return <Badge className="bg-amber-500 text-white border-none rounded-sm px-2 text-[9px] uppercase font-black tracking-widest">Liquidation</Badge>;
       default: return <Badge variant="outline" className="text-slate-400 border-slate-200 rounded-sm px-2 text-[9px] uppercase font-black tracking-widest">Draft</Badge>;
@@ -157,6 +275,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
+      {/* Drive Connection Status */}
+      {!localStorage.getItem('google_drive_token') && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="mx-6 p-4 bg-orange-50 border border-orange-100 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600">
+               <AlertCircle className="h-6 w-6" />
+            </div>
+            <div>
+               <h3 className="text-orange-900 font-bold">Drive Session Disconnected</h3>
+               <p className="text-orange-700 text-xs font-medium">Automatic file transfers are currently suspended. Please re-authenticate to sync and approve missions.</p>
+            </div>
+          </div>
+          <Button 
+            variant="outline" 
+            className="border-orange-200 text-orange-700 hover:bg-orange-100 rounded-xl"
+            onClick={() => {
+              import('../lib/firebase').then(({ auth }) => auth.signOut());
+            }}
+          >
+            Reconnect Google Drive
+          </Button>
+        </motion.div>
+      )}
       {/* Header Area */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-slate-100 pb-8">
         <div className="space-y-4">
@@ -218,11 +363,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
           )}
 
           <Button 
-            onClick={() => exportToExcel(filteredData, 'STLAF_Liaison_Master_Report_2026', 'opex')}
-            className="h-14 bg-navy-900 hover:bg-navy-800 rounded-2xl gap-2 font-black uppercase text-xs tracking-widest px-8 shadow-xl shadow-navy-900/10 group"
+            variant="outline"
+            onClick={() => setShowSettings(true)}
+            className="h-14 border-slate-200 text-slate-600 rounded-2xl gap-2 font-black uppercase text-xs tracking-widest px-6"
+          >
+            <Settings className="h-5 w-5" />
+            Config
+          </Button>
+
+          <Button 
+            onClick={() => exportToExcel(filteredData, 'STLAF_Operations_Unified_Summary_2026')}
+            className="h-14 bg-navy-900 hover:bg-navy-800 rounded-2xl gap-2 font-black uppercase text-xs tracking-widest px-8 shadow-xl shadow-navy-900/10 group animate-pulse-subtle"
           >
             <Download className="h-5 w-5 group-hover:translate-y-1 transition-transform" />
-            Export Master Log
+            Export Unified logs
           </Button>
         </div>
       </div>
@@ -232,8 +386,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
         <div className="grid gap-6 md:grid-cols-4">
           {[
             { label: 'Total Operations', value: entries.length, color: 'text-navy-900' },
-            { label: 'Ongoing Missions', value: entries.filter(d => d.status === 'Ongoing').length, color: 'text-blue-500' },
-            { label: 'Pending Audit', value: entries.filter(d => d.status === 'Submitted').length, color: 'text-indigo-600' },
+            { label: 'Total Cash Advance', value: `₱${entries.reduce((sum, e) => sum + (e.requestedCashAdvance || 0), 0).toLocaleString()}`, color: 'text-blue-500' },
+            { label: 'Total Reimbursements', value: `₱${entries.reduce((sum, e) => sum + (e.reimbursements?.reduce((ss, r) => ss + r.amount, 0) || 0), 0).toLocaleString()}`, color: 'text-indigo-600' },
             { label: 'Liquidation Value', value: `₱${entries.reduce((sum, e) => sum + (e.liquidationItems?.reduce((ss, i) => ss + i.amount, 0) || 0), 0).toLocaleString()}`, color: 'text-emerald-600', isLarge: true },
           ].map((stat, i) => (
             <Card key={i} className="border-none bg-white shadow-sm overflow-hidden group">
@@ -285,11 +439,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
         {adminTab === 'missions' && (
           <div className="flex gap-2">
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="h-14 rounded-2xl border-slate-100 font-bold gap-2 px-6">
-                  <Filter className="h-4 w-4" />
-                  Status: {statusFilter}
-                </Button>
+              <DropdownMenuTrigger className="h-14 rounded-2xl border border-slate-100 font-bold gap-2 px-6 flex items-center justify-center bg-white hover:bg-slate-50 transition-colors">
+                <Filter className="h-4 w-4" />
+                Status: {statusFilter}
               </DropdownMenuTrigger>
               <DropdownMenuContent className="rounded-2xl min-w-[200px] p-2">
                  {['All', 'Draft', 'Ongoing', 'For Liquidation', 'Submitted', 'Approved', 'Rejected'].map(s => (
@@ -305,6 +457,48 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
 
       {/* Content Area */}
       <AnimatePresence mode="wait">
+        {/* Revision Notes Dialog */}
+        <Dialog open={!!revisionEntryId} onOpenChange={(open) => !open && setRevisionEntryId(null)}>
+          <DialogContent className="max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+            <div className="h-2 bg-orange-500 w-full" />
+            <div className="p-8 space-y-6">
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-black text-navy-900 italic tracking-tight">Revision Request.</DialogTitle>
+                <DialogDescription className="font-medium text-slate-500">
+                  Provide specific instructions on what needs to be fixed or updated in this entry.
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-2">
+                <Label className="micro-label text-orange-600">Revision Notes</Label>
+                <Textarea 
+                  placeholder="e.g., Please upload a clearer copy of the fuel receipt."
+                  value={revisionNotes}
+                  onChange={(e) => setRevisionNotes(e.target.value)}
+                  className="min-h-[150px] rounded-2xl bg-slate-50 border-none font-medium focus:ring-2 focus:ring-orange-200 transition-all"
+                />
+              </div>
+
+              <DialogFooter className="flex flex-row gap-3 pt-4">
+                <Button 
+                  variant="ghost" 
+                  onClick={() => setRevisionEntryId(null)}
+                  className="flex-1 h-12 rounded-xl font-bold text-slate-400 hover:text-navy-900"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={submitRevisionRequest}
+                  disabled={isRevisionLoading}
+                  className="flex-1 h-12 rounded-xl bg-orange-500 hover:bg-orange-600 font-bold text-white shadow-lg shadow-orange-500/20"
+                >
+                  {isRevisionLoading ? "Sending..." : "Send Request"}
+                </Button>
+              </DialogFooter>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {adminTab === 'missions' ? (
           viewMode === 'table' ? (
             <motion.div 
@@ -314,8 +508,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
               exit={{ opacity: 0 }}
               className="bg-white border border-slate-100 rounded-[2.5rem] overflow-hidden shadow-xl shadow-navy-900/5 mb-20"
             >
-              <Table>
-                <TableHeader className="bg-slate-50/50">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-slate-50/50">
                   <TableRow className="hover:bg-transparent border-slate-50">
                     <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400 pl-8">Mission Lead</TableHead>
                     <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">Destination</TableHead>
@@ -359,22 +554,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                               <Eye className="h-5 w-5" />
                             </Button>
                             <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-slate-400">
-                                  <MoreVertical className="h-5 w-5" />
-                                </Button>
+                              <DropdownMenuTrigger className="h-10 w-10 rounded-xl text-slate-400 hover:bg-slate-100 flex items-center justify-center transition-colors">
+                                <MoreVertical className="h-5 w-5" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="rounded-2xl p-2 min-w-[200px]">
                                 <div className="px-3 py-2 micro-label text-slate-300">Operational Decision</div>
                                 <DropdownMenuItem onClick={() => handleUpdateStatus(item.id!, 'Approved')} className="gap-3 text-emerald-600 cursor-pointer rounded-xl font-bold">
                                   <CheckCircle className="h-4 w-4" /> Approve Mission
                                 </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleUpdateStatus(item.id!, 'Needs Revision')} className="gap-3 text-orange-600 cursor-pointer rounded-xl font-bold">
+                                  <Clock className="h-4 w-4" /> Send for Revision
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleUpdateStatus(item.id!, 'Rejected')} className="gap-3 text-red-600 cursor-pointer rounded-xl font-bold">
-                                  <XCircle className="h-4 w-4" /> Reject Mission
+                                  <XCircle className="h-4 w-4" /> Abort / Reject
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator className="bg-slate-100" />
+                                <div className="px-3 py-2 micro-label text-slate-300 font-normal">State Overrides</div>
                                 <DropdownMenuItem onClick={() => handleUpdateStatus(item.id!, 'For Liquidation')} className="gap-3 text-amber-600 cursor-pointer rounded-xl font-bold">
-                                  <FileText className="h-4 w-4" /> Mark for Liquidation
+                                  <FileText className="h-4 w-4" /> Open for Liquidation
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleUpdateStatus(item.id!, 'Ongoing')} className="gap-3 text-blue-600 cursor-pointer rounded-xl font-bold">
+                                  <ExternalLink className="h-4 w-4" /> Revive to Ongoing
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -385,6 +585,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                   )}
                 </TableBody>
               </Table>
+              </div>
             </motion.div>
           ) : (
             <motion.div 
@@ -439,8 +640,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             exit={{ opacity: 0 }}
             className="bg-white border border-slate-100 rounded-[2.5rem] overflow-hidden shadow-xl shadow-navy-900/5 mb-20"
           >
-             <Table>
-                <TableHeader className="bg-slate-50/50">
+             <div className="overflow-x-auto">
+               <Table>
+                  <TableHeader className="bg-slate-50/50">
                   <TableRow className="hover:bg-transparent border-slate-50">
                     <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400 pl-8">Identity</TableHead>
                     <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">Department</TableHead>
@@ -491,10 +693,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                           </TableCell>
                           <TableCell className="text-right pr-8">
                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-slate-400 hover:text-navy-900">
-                                     <UserCog className="h-5 w-5" />
-                                  </Button>
+                                <DropdownMenuTrigger className="h-10 w-10 rounded-xl text-slate-400 hover:text-navy-900 hover:bg-slate-100 flex items-center justify-center transition-colors">
+                                   <UserCog className="h-5 w-5" />
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="rounded-2xl p-2 min-w-[200px]">
                                    <div className="px-3 py-2 micro-label text-slate-300">Privilege Override</div>
@@ -519,9 +719,50 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                    )}
                 </TableBody>
              </Table>
+             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      <Dialog open={showSettings} onOpenChange={setShowSettings}>
+        <DialogContent className="max-w-2xl bg-white p-8 rounded-3xl border-0 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-3xl font-black text-navy-900 tracking-tighter italic">System Configuration</DialogTitle>
+            <DialogDescription className="text-lg font-medium text-slate-500">
+              Manage backend settings and cloud integrations.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 mt-4">
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
+              <h3 className="font-bold text-navy-900 flex items-center gap-2">
+                <Settings className="h-5 w-5" /> Storage Setup (Hidden from Users)
+              </h3>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                App files are uploaded to Google Drive. The system is reverting back to User Google Drive Login. Ensure that the users are authenticating their Google Drive upon login.
+              </p>
+              
+              <div className="space-y-2 mt-4 bg-white p-4 rounded-xl border border-slate-100">
+                <Label className="text-xs uppercase tracking-widest text-slate-400 font-bold">Base Drive Setup</Label>
+                <div className="flex text-xs">
+                  <p>The system will automatically create an "STLAF" folder in the root of the logged-in user's Google Drive, unless you configure an explicit Parent Folder ID in your environment variables.</p>
+                </div>
+              </div>
+
+              <div className="space-y-2 bg-white p-4 rounded-xl border border-slate-100">
+                <Label className="text-xs uppercase tracking-widest text-slate-400 font-bold">Override Folder ID (Optional)</Label>
+                <p className="text-xs text-slate-500">
+                  Open your <span className="font-mono bg-slate-100 px-1 rounded">.env</span> file in the AI Studio editor and set <span className="font-mono bg-slate-100 px-1 rounded">GOOGLE_DRIVE_PARENT_FOLDER_ID</span> to force uploads into a specific folder.
+                </p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="mt-8">
+            <Button className="h-12 px-8 rounded-xl font-bold bg-navy-900 hover:bg-navy-800" onClick={() => setShowSettings(false)}>
+              Understood
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

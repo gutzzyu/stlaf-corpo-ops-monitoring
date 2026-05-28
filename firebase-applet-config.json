@@ -1,10 +1,10 @@
 {
-  "projectId": "gen-lang-client-0849555859",
-  "appId": "1:1041460618043:web:966105428a42bdee9bcd1e",
-  "apiKey": "AIzaSyC8QBOMn_Lu9E9Hj8BAQOkV8crB-PjRcQw",
-  "authDomain": "gen-lang-client-0849555859.firebaseapp.com",
+  "projectId": "stlaf-operation-monitoring",
+  "appId": "1:1076074985366:web:263c9752bb3595339f0fb7",
+  "apiKey": "AIzaSyB6RbKgSKvHb8-a847ogR0_ZPcAhR54Bgs",
+  "authDomain": "stlaf-operation-monitoring.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-e5874365-ab5f-4bf6-af2e-88de439a1b99",
-  "storageBucket": "gen-lang-client-0849555859.firebasestorage.app",
-  "messagingSenderId": "1041460618043",
+  "storageBucket": "stlaf-operation-monitoring.firebasestorage.app",
+  "messagingSenderId": "1076074985366",
   "measurementId": ""
 }

@@ -1,6 +1,6 @@
 import { Timestamp } from 'firebase/firestore';
 
-export type EntryStatus = 'Draft' | 'Ongoing' | 'For Liquidation' | 'Submitted' | 'Approved' | 'Rejected';
+export type EntryStatus = 'Draft' | 'Ongoing' | 'For Liquidation' | 'Submitted' | 'Approved' | 'Rejected' | 'Needs Revision' | 'Completed';
 
 export interface UserProfile {
   uid: string;
@@ -17,17 +17,36 @@ export interface ReimbursementEntry {
   amount: number;
   remarks?: string;
   attachmentUrl?: string;
+  driveFileId?: string;
+  driveUrl?: string;
   fileName?: string;
+  mimeType?: string;
 }
 
 export interface LiquidationItem {
   id: string;
+  dateOfReceipt: string;
+  entity: 'CCT';
+  department: 'Corporate';
+  tinNo: string;
+  supplierName: string;
+  supplierAddress: string;
+  account: string;
+  taxType: 'VAT' | 'NON-VAT';
+  vatExclusive?: number;
+  vatAmount?: number;
+  nonVatAmount?: number;
+  invoiceNo?: string;
+  billable: 'Yes' | 'No';
+  clientName: string;
   description: string;
   amount: number;
   receiptUrl?: string;
-  date: string;
+  driveFileId?: string;
+  driveUrl?: string;
   fileName?: string;
   requiresProofSlip?: boolean;
+  mimeType?: string;
 }
 
 export interface ProofSlip {
@@ -36,7 +55,10 @@ export interface ProofSlip {
   amount: number;
   explanation: string;
   attachmentUrl?: string;
+  driveFileId?: string;
+  driveUrl?: string;
   fileName?: string;
+  mimeType?: string;
 }
 
 export interface OperationalEntry {
@@ -54,8 +76,14 @@ export interface OperationalEntry {
   destinationType: 'Within Metro Manila' | 'Outside Metro Manila';
   outOfPocketExpense: number;
   requestedCashAdvance: number;
+  cashAdvancePurpose?: string;
   remarks: string;
+  adminNotes?: string;
   status: EntryStatus;
+  
+  billed?: 'Yes' | 'No';
+  billingNumber?: string;
+  billingDate?: string;
   
   hasReimbursements?: boolean;
   reimbursements?: ReimbursementEntry[];
@@ -63,6 +91,8 @@ export interface OperationalEntry {
   proofSlips?: ProofSlip[];
   
   submittedAt?: Timestamp;
+  reportDriveUrl?: string;
+  reportDriveId?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

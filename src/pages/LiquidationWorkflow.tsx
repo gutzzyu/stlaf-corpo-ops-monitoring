@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType, getErrorMessage } from '../lib/firebase';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -22,18 +22,46 @@ import {
   ChevronLeft,
   X,
   Camera,
-  AlertCircle
+  AlertCircle,
+  ExternalLink,
+  Eye
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../components/auth/AuthProvider';
 import { motion, AnimatePresence } from 'motion/react';
 import { OperationalEntry, ReimbursementEntry, LiquidationItem, ProofSlip } from '../types';
+import { CLIENT_MASTERLIST, ACCOUNT_CHOICES } from '../lib/constants';
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Search, Check } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 
 interface Props {
   entry: OperationalEntry;
   onBack: () => void;
   onSuccess: () => void;
 }
+
+const FileThumbnail = ({ file }: { file: File }) => {
+  const [url, setUrl] = useState<string>('');
+  
+  React.useEffect(() => {
+    if (!file) return;
+    const objectUrl = URL.createObjectURL(file);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
+  
+  if (!url) return <div className="w-full h-full bg-slate-100 animate-pulse" />;
+  return <img src={url} alt="thumbnail" className="w-full h-full object-cover" />;
+};
 
 const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
   const { user } = useAuth();
@@ -42,34 +70,123 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
 
   // Field states
   const [hasReimbursements, setHasReimbursements] = useState(entry.hasReimbursements || false);
-  const [reimbursements, setReimbursements] = useState<ReimbursementEntry[]>(entry.reimbursements || []);
-  const [liquidationItems, setLiquidationItems] = useState<LiquidationItem[]>(entry.liquidationItems || [
-    { id: Math.random().toString(36).substr(2, 9), description: '', amount: 0, date: new Date().toISOString().split('T')[0] }
+  const [reimbursements, setReimbursements] = useState<(ReimbursementEntry & { pendingFile?: File })[]>(entry.reimbursements || []);
+  const [liquidationItems, setLiquidationItems] = useState<(LiquidationItem & { pendingFile?: File })[]>(entry.liquidationItems || [
+    { 
+      id: Math.random().toString(36).substr(2, 9), 
+      dateOfReceipt: new Date().toISOString().split('T')[0],
+      entity: 'CCT',
+      department: 'Corporate',
+      tinNo: 'N/A',
+      supplierName: 'N/A',
+      supplierAddress: 'N/A',
+      account: '',
+      taxType: 'VAT',
+      billable: 'No',
+      clientName: '',
+      description: '',
+      amount: 0 
+    }
   ]);
-  const [proofSlips, setProofSlips] = useState<ProofSlip[]>(entry.proofSlips || []);
+  const [proofSlips, setProofSlips] = useState<(ProofSlip & { pendingFile?: File })[]>(entry.proofSlips || []);
 
-  const handleFileUpload = async (file: File, type: string, index: number) => {
+  // Preview state
+  const [previewFile, setPreviewFile] = useState<{ url: string; name: string } | null>(null);
+
+  const isDriveUrl = (url: string) => url.includes('drive.google.com');
+
+  const getEmbedUrl = (url: string) => {
+    if (isDriveUrl(url)) {
+      const match = url.match(/\/d\/([^\/]+)/) || url.match(/id=([^&]+)/);
+      if (match && match[1]) {
+        return `https://drive.google.com/file/d/${match[1]}/preview`;
+      }
+    }
+    return url;
+  };
+
+  const openPreview = (file: File | string, name: string) => {
+    if (!file) return;
+    if (typeof file === 'string') {
+      setPreviewFile({ url: file, name });
+    } else {
+      setPreviewFile({ url: URL.createObjectURL(file), name });
+    }
+  };
+
+  const closePreview = () => {
+    if (previewFile && !previewFile.url.startsWith('http')) {
+      URL.revokeObjectURL(previewFile.url);
+    }
+    setPreviewFile(null);
+  };
+
+  const handleFileUpload = async (file: File, category: string) => {
     if (!user) return null;
-    const toastId = toast.loading(`Uploading ${type}...`);
     
     try {
-      const dateStr = new Date().toISOString().split('T')[0];
-      const nameParts = user.displayName?.split(' ') || ['User'];
-      const lastName = nameParts[nameParts.length - 1].toLowerCase();
-      const firstName = nameParts[0].toLowerCase();
-      const ext = file.name.split('.').pop();
-      const fileName = `${dateStr}_${firstName}_${lastName}_${type}_${index}.${ext}`;
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('year', new Date().getFullYear().toString());
+      formData.append('month', ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][new Date().getMonth()]);
+      formData.append('userName', user.displayName || user.email || 'Unknown');
+      formData.append('entryId', entry.id!);
+      formData.append('category', category);
       
-      const storageRef = ref(storage, `receipts/${user.uid}/${entry.id}/${fileName}`);
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
-      
-      toast.success(`${type} uploaded`, { id: toastId });
-      return { url, fileName };
-    } catch (error) {
-      toast.error(`Upload failed`, { id: toastId });
-      console.error(error);
-      return null;
+      const isPending = entry.status !== 'Approved';
+      formData.append('isPending', isPending.toString());
+
+      const driveToken = localStorage.getItem('google_drive_token');
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include', // Ensure cookies are sent for IAP
+        headers: {
+          ...(driveToken ? { 'Authorization': `Bearer ${driveToken}` } : {})
+        }
+      });
+
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type");
+        const bodyText = await response.text();
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+          try {
+            const error = JSON.parse(bodyText);
+            if (response.status === 401 || error.error === 'DRIVE_AUTH_ERROR') {
+              localStorage.removeItem('google_drive_token');
+              localStorage.removeItem('google_drive_token_expiry');
+              throw new Error("Google Drive session expired. Please log out and log in again to refresh your connection.");
+            }
+            throw new Error(error.message || error.error || 'Upload failed');
+          } catch (e: any) {
+            if (e.message.includes("session expired")) throw e;
+            throw new Error(`Upload failed with status ${response.status}: ${bodyText.slice(0, 50)}`);
+          }
+        } else {
+          if (response.status === 413) throw new Error("File is too large.");
+          throw new Error(`Upload failed with status ${response.status}: ${bodyText.slice(0, 50)}`);
+        }
+      }
+
+      const bodyText = await response.text();
+      let data;
+      try {
+        data = JSON.parse(bodyText);
+      } catch (e) {
+        console.error("Invalid JSON from Drive Upload:", response.status, bodyText);
+        if (bodyText.includes("Cookie check") || bodyText.includes("Action required")) {
+          throw new Error("Cannot upload: Browser is blocking third-party cookies. Please click the pop-out icon at top right to open the app in a new tab.");
+        }
+        throw new Error(`Invalid JSON on success response: ${bodyText.slice(0, 100)}`);
+      }
+      return { url: data.url, fileName: data.fileName, fileId: data.fileId, mimeType: file.type };
+    } catch (error: any) {
+      console.error('Drive Upload Error:', error);
+      if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+        throw new Error("Cannot upload: Browser is blocking third-party cookies or redirects. Please click the pop-out icon at top right to open the app in a new tab.");
+      }
+      throw error;
     }
   };
 
@@ -77,17 +194,64 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
     setReimbursements([...reimbursements, { id: Math.random().toString(36).substr(2, 9), purpose: '', amount: 0 }]);
   };
 
+  const deleteFileFromDrive = async (fileId: string) => {
+    try {
+      const driveToken = localStorage.getItem('google_drive_token');
+      const response = await fetch('/api/delete-file', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(driveToken ? { 'Authorization': `Bearer ${driveToken}` } : {})
+        },
+        credentials: 'include',
+        body: JSON.stringify({ fileId })
+      });
+      if (!response.ok) {
+        console.warn("Delete file API error");
+      }
+    } catch (e) {
+      console.warn("Delete file network error", e);
+    }
+  };
+
   const removeReimbursement = (id: string) => {
+    const item = reimbursements.find(r => r.id === id);
+    if (item?.driveFileId) {
+      deleteFileFromDrive(item.driveFileId);
+    }
     setReimbursements(reimbursements.filter(r => r.id !== id));
   };
 
   const addLiquidationItem = () => {
-    setLiquidationItems([...liquidationItems, { id: Math.random().toString(36).substr(2, 9), description: '', amount: 0, date: new Date().toISOString().split('T')[0] }]);
+    setLiquidationItems([...liquidationItems, { 
+      id: Math.random().toString(36).substr(2, 9), 
+      dateOfReceipt: new Date().toISOString().split('T')[0],
+      entity: 'CCT',
+      department: 'Corporate',
+      tinNo: 'N/A',
+      supplierName: 'N/A',
+      supplierAddress: 'N/A',
+      account: '',
+      taxType: 'VAT',
+      billable: 'No',
+      clientName: '',
+      description: '',
+      amount: 0 
+    }]);
   };
 
   const removeLiquidationItem = (id: string) => {
+    const item = liquidationItems.find(i => i.id === id);
+    if (item?.driveFileId) {
+      deleteFileFromDrive(item.driveFileId);
+    }
     setLiquidationItems(liquidationItems.filter(i => i.id !== id));
+    
     // Also remove associated proof slips
+    const slip = proofSlips.find(p => p.id === id);
+    if (slip?.driveFileId) {
+      deleteFileFromDrive(slip.driveFileId);
+    }
     setProofSlips(proofSlips.filter(p => p.id !== id));
   };
 
@@ -106,21 +270,85 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
   const handleFinalSubmit = async () => {
     if (!user) return;
     setIsSubmitting(true);
+    const toastId = toast.loading("Processing attachments and finalizing report...");
+    
     try {
+      // 1. Process Pending Uploads
+      const finalReimbursements = [...reimbursements];
+      for (const r of finalReimbursements) {
+        if (r.pendingFile) {
+          const oldFileId = r.driveFileId;
+          const res = await handleFileUpload(r.pendingFile, 'Reimbursements');
+          if (res) {
+             r.driveUrl = res.url;
+             r.driveFileId = res.fileId;
+             r.fileName = res.fileName;
+             r.mimeType = res.mimeType;
+             delete r.pendingFile;
+             if (oldFileId && oldFileId !== res.fileId) {
+               deleteFileFromDrive(oldFileId);
+             }
+          }
+        }
+      }
+
+      const finalLiquidationItems = [...liquidationItems];
+      for (const item of finalLiquidationItems) {
+        if (item.pendingFile) {
+          const oldFileId = item.driveFileId;
+          const res = await handleFileUpload(item.pendingFile, 'Receipts');
+          if (res) {
+             item.driveUrl = res.url;
+             item.driveFileId = res.fileId;
+             item.fileName = res.fileName;
+             item.mimeType = res.mimeType;
+             delete item.pendingFile;
+             if (oldFileId && oldFileId !== res.fileId) {
+               deleteFileFromDrive(oldFileId);
+             }
+          }
+        }
+      }
+
+      const finalProofSlips = [...proofSlips];
+      for (const slip of finalProofSlips) {
+        if (slip.pendingFile) {
+          const oldFileId = slip.driveFileId;
+          const res = await handleFileUpload(slip.pendingFile, 'Proof_Slips');
+          if (res) {
+             slip.driveUrl = res.url;
+             slip.driveFileId = res.fileId;
+             slip.fileName = res.fileName;
+             slip.mimeType = res.mimeType;
+             delete slip.pendingFile;
+             if (oldFileId && oldFileId !== res.fileId) {
+               deleteFileFromDrive(oldFileId);
+             }
+          }
+        }
+      }
+
+      // 2. Update Firestore
       await updateDoc(doc(db, 'operational_entries', entry.id!), {
         hasReimbursements,
-        reimbursements,
-        liquidationItems,
-        proofSlips,
+        reimbursements: finalReimbursements,
+        liquidationItems: finalLiquidationItems,
+        proofSlips: finalProofSlips,
         status: 'Submitted',
         submittedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      
-      toast.success("Operational entry submitted for audit!");
+
+      toast.success("Operational entry submitted and archived!", { id: toastId });
       onSuccess();
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `operational_entries/${entry.id}`);
+    } catch (error: any) {
+      const errorMessage = getErrorMessage(error);
+      toast.error(`Submission failed: ${errorMessage}`, { id: toastId });
+      
+      // Only report as Firestore error if it's actually about Firestore
+      if (error.code?.includes('permission-denied') || error.message?.includes('Firestore')) {
+        handleFirestoreError(error, OperationType.WRITE, `operational_entries/${entry.id}`);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -139,6 +367,22 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
           ))}
         </div>
       </div>
+
+      {entry.status === 'Needs Revision' && entry.adminNotes && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8 p-6 bg-orange-50 rounded-3xl border-2 border-orange-100 flex gap-4 mx-4"
+        >
+          <AlertCircle className="h-6 w-6 text-orange-500 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <span className="text-[10px] font-black uppercase tracking-widest text-orange-400">Revision Required</span>
+            <p className="text-sm font-bold text-orange-900 italic line-clamp-3">
+              {entry.adminNotes}
+            </p>
+          </div>
+        </motion.div>
+      )}
 
       <AnimatePresence mode="wait">
         {step === 1 && (
@@ -162,7 +406,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                     <Checkbox 
                       id="hasReimbursements" 
                       className="h-6 w-6 rounded-lg border-2 border-slate-300" 
-                      checked={hasReimbursements}
+                      checked={!!hasReimbursements}
                       onCheckedChange={(val) => setHasReimbursements(!!val)}
                     />
                     <Label htmlFor="hasReimbursements" className="text-lg font-bold text-navy-900 cursor-pointer">
@@ -233,10 +477,44 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                                </div>
                                <div className="space-y-2">
                                   <Label className="micro-label">Attachment</Label>
-                                  {r.attachmentUrl ? (
-                                    <div className="h-12 flex items-center justify-between px-4 bg-emerald-50 rounded-xl border-2 border-emerald-100">
-                                       <span className="text-[10px] font-bold text-emerald-700 truncate max-w-[150px]">{r.fileName}</span>
-                                       <BadgeCheck className="h-4 w-4 text-emerald-500" />
+                                  {(r.driveUrl || r.pendingFile) ? (
+                                    <div className="h-12 flex items-center justify-between px-3 bg-emerald-50 rounded-xl border-2 border-emerald-100">
+                                       <div className="flex items-center gap-2 overflow-hidden">
+                                          <div 
+                                            className="w-8 h-8 rounded-lg bg-emerald-100 flex-shrink-0 overflow-hidden cursor-pointer hover:ring-2 hover:ring-emerald-400 transition-all"
+                                            onClick={() => openPreview(r.driveUrl!, r.fileName!)}
+                                          >
+                                            {r.pendingFile ? (
+                                              <FileThumbnail file={r.pendingFile} />
+                                            ) : (
+                                              <Camera className="h-4 w-4 m-auto text-emerald-500" />
+                                            )}
+                                          </div>
+                                          <span className="text-[10px] font-bold text-emerald-700 truncate max-w-[100px]">{r.fileName}</span>
+                                       </div>
+                                      <div className="flex items-center gap-2">
+                                          <Button 
+                                            size="sm" 
+                                            variant="ghost" 
+                                            className="h-7 px-2 text-[9px] font-bold uppercase text-emerald-600 hover:bg-emerald-100"
+                                            onClick={() => openPreview(r.driveUrl!, r.fileName!)}
+                                          >
+                                            View
+                                          </Button>
+                                          <BadgeCheck className="h-4 w-4 text-emerald-500" />
+                                          <Button 
+                                            size="sm" 
+                                            variant="ghost" 
+                                            onClick={() => {
+                                              if (r.driveFileId) deleteFileFromDrive(r.driveFileId);
+                                              const updated = reimbursements.map(item => item.id === r.id ? { ...item, driveUrl: '', driveFileId: '', fileName: '', pendingFile: undefined, mimeType: '' } : item);
+                                              setReimbursements(updated);
+                                            }}
+                                            className="h-8 w-8 text-emerald-400"
+                                          >
+                                             <X className="h-4 w-4" />
+                                          </Button>
+                                       </div>
                                     </div>
                                   ) : (
                                     <div className="relative h-12">
@@ -244,20 +522,21 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                                         type="file" 
                                         accept="image/*"
                                         className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                                        onChange={async (e) => {
+                                        onChange={(e) => {
                                           const file = e.target.files?.[0];
                                           if (file) {
-                                            const res = await handleFileUpload(file, 'reimbursement', idx);
-                                            if (res) {
-                                              const updated = reimbursements.map(item => item.id === r.id ? { ...item, attachmentUrl: res.url, fileName: res.fileName } : item);
-                                              setReimbursements(updated);
-                                            }
+                                            const updated = reimbursements.map(item => item.id === r.id ? { 
+                                              ...item, 
+                                              pendingFile: file,
+                                              fileName: file.name
+                                            } : item);
+                                            setReimbursements(updated);
                                           }
                                         }}
                                       />
                                       <div className="h-full flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 font-bold text-xs hover:border-navy-900 hover:text-navy-900 transition-all">
                                         <Upload className="h-4 w-4" />
-                                        Upload Receipt
+                                        Select Receipt
                                       </div>
                                     </div>
                                   )}
@@ -324,69 +603,307 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                           <Trash2 className="h-5 w-5" />
                         </Button>
                         
-                        <div className="grid gap-6 md:grid-cols-3">
+                        <div className="grid gap-6 md:grid-cols-4">
                            <div className="space-y-2 md:col-span-1">
-                              <Label className="micro-label">Expense Date</Label>
+                              <Label className="micro-label">Date of Receipt</Label>
                               <Input 
                                 type="date"
-                                value={item.date}
+                                value={item.dateOfReceipt}
                                 onChange={(e) => {
-                                  const updated = liquidationItems.map(li => li.id === item.id ? { ...li, date: e.target.value } : li);
+                                  const updated = liquidationItems.map(li => li.id === item.id ? { ...li, dateOfReceipt: e.target.value } : li);
                                   setLiquidationItems(updated);
                                 }}
                                 className="h-12 rounded-xl bg-white border-none font-bold font-data"
                               />
                            </div>
-                           <div className="space-y-2 md:col-span-2">
-                              <Label className="micro-label">Description / Particulars</Label>
-                              <Input 
-                                value={item.description}
-                                onChange={(e) => {
-                                  const updated = liquidationItems.map(li => li.id === item.id ? { ...li, description: e.target.value } : li);
+                           <div className="space-y-2">
+                              <Label className="micro-label">Entity</Label>
+                              <Select 
+                                value={item.entity} 
+                                onValueChange={(val) => {
+                                  const updated = liquidationItems.map(li => li.id === item.id ? { ...li, entity: val as 'CCT' } : li);
                                   setLiquidationItems(updated);
                                 }}
-                                placeholder="e.g., Gas Refill - Shell SLEX"
+                              >
+                                <SelectTrigger className="h-12 rounded-xl bg-white border-none font-bold">
+                                  <SelectValue placeholder="Select Entity" />
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl border-none shadow-xl bg-white">
+                                  <SelectItem value="CCT">CCT</SelectItem>
+                                </SelectContent>
+                              </Select>
+                           </div>
+                           <div className="space-y-2 col-span-2">
+                              <Label className="micro-label">Department</Label>
+                              <Select 
+                                value={item.department} 
+                                onValueChange={(val) => {
+                                  const updated = liquidationItems.map(li => li.id === item.id ? { ...li, department: val as 'Corporate' } : li);
+                                  setLiquidationItems(updated);
+                                }}
+                              >
+                                <SelectTrigger className="h-12 rounded-xl bg-white border-none font-bold">
+                                  <SelectValue placeholder="Select Dept" />
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl border-none shadow-xl bg-white">
+                                  <SelectItem value="Corporate">Corporate</SelectItem>
+                                </SelectContent>
+                              </Select>
+                           </div>
+                        </div>
+
+                        <div className="grid gap-6 md:grid-cols-2">
+                           <div className="space-y-2">
+                              <Label className="micro-label">TIN No. of Supplier</Label>
+                              <Input 
+                                value={item.tinNo}
+                                onChange={(e) => {
+                                  const updated = liquidationItems.map(li => li.id === item.id ? { ...li, tinNo: e.target.value } : li);
+                                  setLiquidationItems(updated);
+                                }}
+                                placeholder="e.g., 001-234-567-000 or N/A"
+                                className="h-12 rounded-xl bg-white border-none font-bold"
+                              />
+                           </div>
+                           <div className="space-y-2">
+                              <Label className="micro-label">Supplier's Name</Label>
+                              <Input 
+                                value={item.supplierName}
+                                onChange={(e) => {
+                                  const updated = liquidationItems.map(li => li.id === item.id ? { ...li, supplierName: e.target.value } : li);
+                                  setLiquidationItems(updated);
+                                }}
+                                placeholder="e.g., Shell SLEX"
                                 className="h-12 rounded-xl bg-white border-none font-bold"
                               />
                            </div>
                         </div>
 
+                        <div className="grid gap-6 md:grid-cols-2">
+                           <div className="space-y-2">
+                              <Label className="micro-label">Supplier's Address</Label>
+                              <Input 
+                                value={item.supplierAddress}
+                                onChange={(e) => {
+                                  const updated = liquidationItems.map(li => li.id === item.id ? { ...li, supplierAddress: e.target.value } : li);
+                                  setLiquidationItems(updated);
+                                }}
+                                placeholder="Full supplier address or N/A"
+                                className="h-12 rounded-xl bg-white border-none font-bold"
+                              />
+                           </div>
+                           <div className="space-y-2">
+                              <Label className="micro-label">Account</Label>
+                              <Select 
+                                value={item.account} 
+                                onValueChange={(val) => {
+                                  const updated = liquidationItems.map(li => li.id === item.id ? { ...li, account: val } : li);
+                                  setLiquidationItems(updated);
+                                }}
+                              >
+                                <SelectTrigger className="h-12 rounded-xl bg-white border-none font-bold">
+                                  <SelectValue placeholder="Select Account" />
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl border-none shadow-xl bg-white">
+                                  {ACCOUNT_CHOICES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                           </div>
+                        </div>
+
+                        <div className="grid gap-6 md:grid-cols-4">
+                           <div className="space-y-2 col-span-2">
+                              <Label className="micro-label">VAT / NON-VAT</Label>
+                              <RadioGroup 
+                                value={item.taxType} 
+                                onValueChange={(val) => {
+                                  const updated = liquidationItems.map(li => li.id === item.id ? { ...li, taxType: val as 'VAT' | 'NON-VAT' } : li);
+                                  setLiquidationItems(updated);
+                                }}
+                                className="flex items-center gap-6 h-12 px-4 bg-white rounded-xl"
+                              >
+                                <div className="flex items-center space-x-2">
+                                  <RadioGroupItem value="VAT" id={`vat-${item.id}`} className="border-2 text-navy-900" />
+                                  <Label htmlFor={`vat-${item.id}`} className="font-bold text-navy-900 cursor-pointer">VAT</Label>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <RadioGroupItem value="NON-VAT" id={`non-vat-${item.id}`} className="border-2 text-navy-900" />
+                                  <Label htmlFor={`non-vat-${item.id}`} className="font-bold text-navy-900 cursor-pointer">NON-VAT</Label>
+                                </div>
+                              </RadioGroup>
+                           </div>
+                           <div className="space-y-2 col-span-2">
+                              <Label className="micro-label">Billable</Label>
+                              <RadioGroup 
+                                value={item.billable} 
+                                onValueChange={(val) => {
+                                  const updated = liquidationItems.map(li => li.id === item.id ? { ...li, billable: val as 'Yes' | 'No' } : li);
+                                  setLiquidationItems(updated);
+                                }}
+                                className="flex items-center gap-6 h-12 px-4 bg-white rounded-xl"
+                              >
+                                <div className="flex items-center space-x-2">
+                                  <RadioGroupItem value="Yes" id={`yes-${item.id}`} className="border-2 text-navy-900" />
+                                  <Label htmlFor={`yes-${item.id}`} className="font-bold text-navy-900 cursor-pointer">Yes</Label>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <RadioGroupItem value="No" id={`no-${item.id}`} className="border-2 text-navy-900" />
+                                  <Label htmlFor={`no-${item.id}`} className="font-bold text-navy-900 cursor-pointer">No</Label>
+                                </div>
+                              </RadioGroup>
+                           </div>
+                        </div>
+
+                        {item.taxType === 'VAT' ? (
+                          <div className="grid gap-6 md:grid-cols-2">
+                             <div className="space-y-2">
+                                <Label className="micro-label">VAT Exclusive Amount</Label>
+                                <Input 
+                                  type="number"
+                                  value={item.vatExclusive}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    const updated = liquidationItems.map(li => li.id === item.id ? { 
+                                      ...li, 
+                                      vatExclusive: val,
+                                      amount: val + (li.vatAmount || 0)
+                                    } : li);
+                                    setLiquidationItems(updated);
+                                  }}
+                                  placeholder="0.00"
+                                  className="h-12 rounded-xl bg-white border-none font-bold"
+                                />
+                             </div>
+                             <div className="space-y-2">
+                                <Label className="micro-label">VAT Amount</Label>
+                                <Input 
+                                  type="number"
+                                  value={item.vatAmount}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    const updated = liquidationItems.map(li => li.id === item.id ? { 
+                                      ...li, 
+                                      vatAmount: val,
+                                      amount: (li.vatExclusive || 0) + val
+                                    } : li);
+                                    setLiquidationItems(updated);
+                                  }}
+                                  placeholder="0.00"
+                                  className="h-12 rounded-xl bg-white border-none font-bold"
+                                />
+                             </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                             <Label className="micro-label">NON-VAT Amount</Label>
+                             <Input 
+                               type="number"
+                               value={item.nonVatAmount}
+                               onChange={(e) => {
+                                 const val = Number(e.target.value);
+                                 const updated = liquidationItems.map(li => li.id === item.id ? { 
+                                   ...li, 
+                                   nonVatAmount: val,
+                                   amount: val
+                                 } : li);
+                                 setLiquidationItems(updated);
+                               }}
+                               placeholder="0.00"
+                               className="h-12 rounded-xl bg-white border-none font-bold"
+                             />
+                          </div>
+                        )}
+
+                        <div className="grid gap-6 md:grid-cols-2">
+                           <div className="space-y-2">
+                              <Label className="micro-label">Invoice No.</Label>
+                              <Input 
+                                value={item.invoiceNo || ''}
+                                onChange={(e) => {
+                                  const updated = liquidationItems.map(li => li.id === item.id ? { ...li, invoiceNo: e.target.value } : li);
+                                  setLiquidationItems(updated);
+                                }}
+                                placeholder="Official Receipt / Invoice No."
+                                className="h-12 rounded-xl bg-white border-none font-bold"
+                              />
+                           </div>
+                           <div className="space-y-2">
+                              <Label className="micro-label">Client Name</Label>
+                              <Input 
+                                value={item.clientName || ''}
+                                onChange={(e) => {
+                                  const updated = liquidationItems.map(li => li.id === item.id ? { ...li, clientName: e.target.value } : li);
+                                  setLiquidationItems(updated);
+                                }}
+                                list="pcf-client-names"
+                                placeholder="Search or enter Client Name"
+                                className="h-12 rounded-xl bg-white border-none font-bold text-navy-900"
+                              />
+                              <datalist id="pcf-client-names">
+                                {CLIENT_MASTERLIST.map((client) => (
+                                  <option key={client} value={client} />
+                                ))}
+                              </datalist>
+
+                           </div>
+                        </div>
+
                         <div className="grid gap-6 md:grid-cols-2 items-end">
                            <div className="space-y-2">
-                              <Label className="micro-label font-bold text-amber-600 italic">Expense Amount (PHP)</Label>
+                              <Label className="micro-label font-bold text-amber-600 italic">Total Amount (PHP)</Label>
                               <div className="relative">
                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-amber-600">₱</span>
                                 <Input 
                                   type="number"
+                                  readOnly
                                   value={item.amount}
-                                  onChange={(e) => {
-                                    const updated = liquidationItems.map(li => li.id === item.id ? { ...li, amount: Number(e.target.value) } : li);
-                                    setLiquidationItems(updated);
-                                  }}
-                                  className="h-14 pl-10 rounded-xl bg-white border-none text-2xl font-black font-data text-navy-900"
+                                  className="h-14 pl-10 rounded-xl bg-white/50 border-none text-2xl font-black font-data text-navy-900 cursor-not-allowed"
                                 />
                               </div>
                            </div>
                            <div className="space-y-2">
                               <Label className="micro-label">Receipt Proof</Label>
                               {!item.requiresProofSlip ? (
-                                item.receiptUrl ? (
-                                  <div className="h-14 flex items-center justify-between px-4 bg-emerald-50 rounded-xl border-2 border-emerald-100">
-                                     <div className="flex items-center gap-2">
-                                        <Camera className="h-4 w-4 text-emerald-500" />
-                                        <span className="text-[10px] font-bold text-emerald-700 truncate max-w-[200px]">{item.fileName}</span>
+                                (item.driveUrl || item.pendingFile) ? (
+                                  <div className="h-14 flex items-center justify-between px-3 bg-emerald-50 rounded-xl border-2 border-emerald-100">
+                                     <div className="flex items-center gap-2 overflow-hidden">
+                                        <div 
+                                          className="w-10 h-10 rounded-lg bg-emerald-100 flex-shrink-0 overflow-hidden cursor-pointer hover:ring-2 hover:ring-emerald-400 transition-all"
+                                          onClick={() => openPreview(item.driveUrl!, item.fileName!)}
+                                        >
+                                          {item.pendingFile ? (
+                                            <FileThumbnail file={item.pendingFile} />
+                                          ) : (
+                                            <Camera className="h-5 w-5 m-auto text-emerald-500" />
+                                          )}
+                                        </div>
+                                        <div className="flex flex-col">
+                                          <span className="text-[10px] font-bold text-emerald-700 truncate max-w-[120px]">{item.fileName}</span>
+                                          <Button 
+                                            size="sm" 
+                                            variant="link" 
+                                            className="h-auto p-0 text-[8px] font-black uppercase text-emerald-500 justify-start"
+                                            onClick={() => openPreview(item.driveUrl!, item.fileName!)}
+                                          >
+                                            Preview Image
+                                          </Button>
+                                        </div>
                                      </div>
-                                     <Button 
-                                       size="sm" 
-                                       variant="ghost" 
-                                       onClick={() => {
-                                         const updated = liquidationItems.map(li => li.id === item.id ? { ...li, receiptUrl: '', fileName: '' } : li);
-                                         setLiquidationItems(updated);
-                                       }}
-                                       className="h-8 w-8 text-emerald-400"
-                                     >
-                                        <X className="h-4 w-4" />
-                                     </Button>
+                                     <div className="flex items-center gap-2">
+                                       <BadgeCheck className="h-4 w-4 text-emerald-500" />
+                                       <Button 
+                                         size="sm" 
+                                         variant="ghost" 
+                                         onClick={() => {
+                                           if (item.driveFileId) deleteFileFromDrive(item.driveFileId);
+                                           const updated = liquidationItems.map(li => li.id === item.id ? { ...li, driveUrl: '', driveFileId: '', fileName: '', pendingFile: undefined, mimeType: '' } : li);
+                                           setLiquidationItems(updated);
+                                         }}
+                                         className="h-8 w-8 text-emerald-400"
+                                       >
+                                          <X className="h-4 w-4" />
+                                       </Button>
+                                     </div>
                                   </div>
                                 ) : (
                                   <div className="relative h-14">
@@ -394,14 +911,15 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                                       type="file" 
                                       accept="image/*"
                                       className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                                      onChange={async (e) => {
+                                      onChange={(e) => {
                                         const file = e.target.files?.[0];
                                         if (file) {
-                                          const res = await handleFileUpload(file, 'receipt', idx);
-                                          if (res) {
-                                            const updated = liquidationItems.map(li => li.id === item.id ? { ...li, receiptUrl: res.url, fileName: res.fileName } : li);
-                                            setLiquidationItems(updated);
-                                          }
+                                          const updated = liquidationItems.map(li => li.id === item.id ? { 
+                                            ...li, 
+                                            pendingFile: file,
+                                            fileName: file.name
+                                          } : li);
+                                          setLiquidationItems(updated);
                                         }
                                       }}
                                     />
@@ -425,7 +943,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                              id={`proof-${item.id}`} 
                              className="h-5 w-5 rounded-md border-2 border-slate-200"
                              onCheckedChange={(val) => toggleProofSlip(item.id, !!val)}
-                             checked={item.requiresProofSlip}
+                             checked={!!item.requiresProofSlip}
                            />
                            <Label htmlFor={`proof-${item.id}`} className="text-xs font-bold text-slate-500 cursor-pointer flex items-center gap-2">
                              I don't have an official receipt for this expense (Requires Proof Slip)
@@ -450,6 +968,81 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                                   placeholder="Provide a detailed explanation why no official receipt is available (e.g., Tricycle fare, street parking)..."
                                   className="min-h-[80px] rounded-xl bg-white border-none font-medium text-sm italic"
                                 />
+                             </div>
+                             <div className="space-y-2">
+                                <Label className="micro-label text-amber-600">Proof Document (Optional)</Label>
+                                {(proofSlips.find(p => p.id === item.id)?.driveUrl || proofSlips.find(p => p.id === item.id)?.pendingFile) ? (
+                                  <div className="h-12 flex items-center justify-between px-3 bg-amber-50 rounded-xl border-2 border-amber-100">
+                                     <div className="flex items-center gap-2 overflow-hidden">
+                                        <div 
+                                          className="w-8 h-8 rounded-lg bg-amber-100 flex-shrink-0 overflow-hidden cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
+                                          onClick={() => {
+                                            const ps = proofSlips.find(p => p.id === item.id);
+                                            if (ps) openPreview(ps.driveUrl!, ps.fileName!);
+                                          }}
+                                        >
+                                          {proofSlips.find(p => p.id === item.id)?.pendingFile ? (
+                                            <FileThumbnail file={proofSlips.find(p => p.id === item.id)!.pendingFile!} />
+                                          ) : (
+                                            <Upload className="h-4 w-4 m-auto text-amber-500" />
+                                          )}
+                                        </div>
+                                        <span className="text-[10px] font-bold text-amber-700 truncate max-w-[120px]">
+                                          {proofSlips.find(p => p.id === item.id)?.fileName}
+                                        </span>
+                                     </div>
+                                     <div className="flex items-center gap-2">
+                                       <Button 
+                                         size="sm" 
+                                         variant="ghost" 
+                                         className="h-7 px-2 text-[9px] font-bold uppercase text-amber-600 hover:bg-amber-100"
+                                         onClick={() => {
+                                           const ps = proofSlips.find(p => p.id === item.id);
+                                            if (ps) openPreview(ps.driveUrl!, ps.fileName!);
+                                         }}
+                                       >
+                                         View
+                                       </Button>
+                                       <BadgeCheck className="h-4 w-4 text-emerald-500" />
+                                       <Button 
+                                         size="sm" 
+                                         variant="ghost" 
+                                         onClick={() => {
+                                           const slip = proofSlips.find(p => p.id === item.id);
+                                           if (slip?.driveFileId) deleteFileFromDrive(slip.driveFileId);
+                                           const updated = proofSlips.map(p => p.id === item.id ? { ...p, driveUrl: '', driveFileId: '', fileName: '', pendingFile: undefined, mimeType: '' } : p);
+                                           setProofSlips(updated);
+                                         }}
+                                         className="h-8 w-8 text-amber-400"
+                                       >
+                                          <X className="h-4 w-4" />
+                                       </Button>
+                                     </div>
+                                  </div>
+                                ) : (
+                                  <div className="relative h-12">
+                                    <input 
+                                      type="file" 
+                                      accept="image/*,application/pdf"
+                                      className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                          const updated = proofSlips.map(p => p.id === item.id ? { 
+                                            ...p, 
+                                            pendingFile: file,
+                                            fileName: file.name
+                                          } : p);
+                                          setProofSlips(updated);
+                                        }
+                                      }}
+                                    />
+                                    <div className="h-full flex items-center justify-center gap-2 border-2 border-dashed border-amber-200 rounded-xl text-amber-400 font-bold text-xs hover:border-amber-600 hover:text-amber-600 transition-all bg-white">
+                                      <Upload className="h-4 w-4" />
+                                      Select Proof Slip
+                                    </div>
+                                  </div>
+                                )}
                              </div>
                           </motion.div>
                         )}
@@ -579,6 +1172,103 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                  </Button>
               </CardFooter>
             </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {/* Image Preview Modal */}
+      <AnimatePresence>
+        {previewFile && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8 bg-slate-950/95 backdrop-blur-md"
+            onClick={closePreview}
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="relative max-w-4xl w-full h-full max-h-[90vh] bg-white rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col border border-white/10"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                    <Eye className="h-5 w-5 text-indigo-600" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <h3 className="text-navy-900 font-bold tracking-tight">Attachment Preview</h3>
+                    <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">{previewFile.name}</p>
+                  </div>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={closePreview} 
+                  className="rounded-full w-10 h-10 hover:bg-slate-100 transition-colors"
+                >
+                  <X className="h-5 w-5 text-slate-500" />
+                </Button>
+              </div>
+
+              {/* Preview Area */}
+              <div className="flex-1 overflow-auto bg-slate-900 flex items-center justify-center relative p-8">
+                {isDriveUrl(previewFile.url) ? (
+                  <iframe 
+                    src={getEmbedUrl(previewFile.url)} 
+                    className="w-full h-full min-h-[500px] rounded-2xl border-none shadow-2xl bg-white"
+                    allow="autoplay"
+                    title="Document Preview"
+                  />
+                ) : (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="relative group"
+                  >
+                    <img 
+                      src={previewFile.url} 
+                      alt="preview" 
+                      className="max-w-full max-h-[65vh] object-contain rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)]"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.src = "https://placehold.co/600x400?text=Preview+Not+Available";
+                      }}
+                    />
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-8 py-6 bg-white border-t border-slate-100 flex items-center justify-between shrink-0">
+                 <div className="hidden md:flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Secure Cloud Preview</span>
+                 </div>
+                 <div className="flex items-center gap-3 w-full md:w-auto">
+                   <Button variant="outline" onClick={closePreview} className="flex-1 md:flex-none rounded-2xl font-bold h-12 px-8 border-2 border-slate-200 hover:bg-slate-50 transition-all">
+                     Close
+                   </Button>
+                   {previewFile.url.startsWith('http') && (
+                     <a 
+                       href={previewFile.url} 
+                       target="_blank" 
+                       rel="noopener noreferrer"
+                       className={cn(
+                         buttonVariants({ variant: "default" }), 
+                         "flex-1 md:flex-none rounded-2xl bg-navy-900 hover:bg-navy-800 font-bold h-12 px-8 shadow-lg shadow-navy-900/20 transition-all hover:scale-[1.02] active:scale-[0.98] inline-flex items-center gap-2 text-white"
+                       )}
+                     >
+                       <ExternalLink className="h-4 w-4" />
+                       View Original
+                     </a>
+                   )}
+                 </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

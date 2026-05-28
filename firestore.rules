@@ -17,6 +17,7 @@ service cloud.firestore {
     // Admin check: strictly look up role in users collection
     function isAdmin() { 
       return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'; 
     }
 
@@ -29,7 +30,9 @@ service cloud.firestore {
                data.createdAt is timestamp;
       }
 
-      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      // Owner can read their document without needing recursive isAdmin check
+      // Admin can read any profile
+      allow read: if isSignedIn() && (request.auth.uid == userId || (request.auth.uid != userId && isAdmin()));
       
       allow create: if isSignedIn() && 
                       request.auth.uid == userId &&
@@ -52,21 +55,35 @@ service cloud.firestore {
         return data.userId is string && data.userId.size() <= 128 &&
                data.employeeName is string && data.employeeName.size() <= 200 &&
                data.department is string && data.department.size() <= 100 &&
-               data.status in ['Draft', 'Ongoing', 'For Liquidation', 'Submitted', 'Approved', 'Rejected'] &&
+               data.contactNumber is string && data.contactNumber.size() <= 50 &&
+               data.destination is string && data.destination.size() <= 300 &&
+               data.purpose is string && data.purpose.size() <= 1000 &&
+               data.scheduleDate is string && data.scheduleDate.size() <= 50 &&
+               data.accountName is string && data.accountName.size() <= 200 &&
+               data.companyName is string && data.companyName.size() <= 200 &&
+               (!('contactPerson' in data) || data.contactPerson is string) &&
+               data.destinationType in ['Within Metro Manila', 'Outside Metro Manila'] &&
+               data.outOfPocketExpense is number &&
+               data.status in ['Draft', 'Ongoing', 'For Liquidation', 'Submitted', 'Approved', 'Rejected', 'Needs Revision', 'Completed'] &&
                (data.requestedCashAdvance == null || data.requestedCashAdvance is number) &&
+               (!('cashAdvancePurpose' in data) || data.cashAdvancePurpose is string) &&
+               (!('remarks' in data) || data.remarks is string) &&
+               (!('adminNotes' in data) || data.adminNotes is string) &&
                (!('reimbursements' in data) || data.reimbursements is list) &&
                (!('liquidationItems' in data) || data.liquidationItems is list) &&
-               (!('proofSlips' in data) || data.proofSlips is list);
+               (!('proofSlips' in data) || data.proofSlips is list) &&
+               (!('reportDriveUrl' in data) || data.reportDriveUrl is string) &&
+               (!('reportDriveId' in data) || data.reportDriveId is string);
       }
 
       // Security Pillar 8: Secure List Queries
-      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
-      allow get: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
 
       allow create: if isSignedIn() && 
                       incoming().userId == request.auth.uid &&
                       isValidOperationalEntry(incoming()) &&
-                      incoming().status in ['Draft', 'Ongoing'] && // Allow starting mission immediately
+                      incoming().status in ['Draft', 'Ongoing', 'For Liquidation'] && 
                       incoming().createdAt == request.time &&
                       incoming().updatedAt == request.time;
 
@@ -80,14 +97,14 @@ service cloud.firestore {
             incoming().createdAt == existing().createdAt &&
             // Lock fields if terminal status or not in editable state
             (
-              // Action: Edit Draft/Ongoing details
-              (existing().status in ['Draft', 'Ongoing'] && 
-               incoming().status in ['Draft', 'Ongoing', 'For Liquidation']) ||
+              // Action: Edit Draft/Ongoing/Revision/Liquidation details
+              (existing().status in ['Draft', 'Ongoing', 'Needs Revision', 'For Liquidation'] && 
+               incoming().status in ['Draft', 'Ongoing', 'For Liquidation', 'Submitted']) ||
               
               // Action: Submit for Liquidation to Submitted
               (existing().status == 'For Liquidation' && 
                incoming().status == 'Submitted' &&
-               incoming().diff(existing()).affectedKeys().hasAny(['reimbursements', 'liquidationItems', 'proofSlips', 'status', 'submittedAt', 'updatedAt']))
+               incoming().diff(existing()).affectedKeys().hasAny(['reimbursements', 'liquidationItems', 'proofSlips', 'status', 'submittedAt', 'updatedAt', 'reportDriveUrl', 'reportDriveId']))
             )
           )
         )

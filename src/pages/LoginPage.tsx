@@ -13,6 +13,11 @@ const LoginPage: React.FC = () => {
 
   const handleGoogleLogin = async () => {
     const provider = new GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/drive.file');
+    provider.addScope('https://www.googleapis.com/auth/drive');
+    provider.setCustomParameters({
+      prompt: 'consent'
+    });
     
     // Crucial: Call provider and popup as close to the click as possible
     // Some browsers block popups if there is any async delay (like state updates) before the call.
@@ -20,6 +25,14 @@ const LoginPage: React.FC = () => {
       setLoading(true);
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
+
+      // Get Google Access Token for Drive API
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        localStorage.setItem('google_drive_token', credential.accessToken);
+        // Also store expiry to know when to refresh (default is 1 hour)
+        localStorage.setItem('google_drive_token_expiry', (Date.now() + 3500 * 1000).toString());
+      }
 
       const userDocRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userDocRef);

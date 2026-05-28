@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType, getErrorMessage } from '../lib/firebase';
 import { collection, query, where, orderBy, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
+import { toast } from 'sonner';
 import { useAuth } from '../components/auth/AuthProvider';
 import { OperationalEntry, EntryStatus } from '../types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -67,8 +68,10 @@ const UserDashboard: React.FC<Props> = ({ onNewEntry, onContinueEntry, onViewEnt
       case 'Ongoing': return { color: 'bg-blue-100 text-blue-600', icon: <ArrowRight className="h-3 w-3" /> };
       case 'For Liquidation': return { color: 'bg-amber-100 text-amber-600', icon: <CreditCard className="h-3 w-3" /> };
       case 'Submitted': return { color: 'bg-indigo-100 text-indigo-600', icon: <CheckCircle2 className="h-3 w-3" /> };
-      case 'Approved': return { color: 'bg-emerald-100 text-emerald-600', icon: <CheckCircle2 className="h-3 w-3" /> };
+      case 'Approved':
+      case 'Completed': return { color: 'bg-emerald-100 text-emerald-600', icon: <CheckCircle2 className="h-3 w-3" /> };
       case 'Rejected': return { color: 'bg-red-100 text-red-600', icon: <AlertCircle className="h-3 w-3" /> };
+      case 'Needs Revision': return { color: 'bg-orange-100 text-orange-600', icon: <AlertCircle className="h-3 w-3" /> };
       default: return { color: 'bg-slate-100 text-slate-600', icon: <Clock className="h-3 w-3" /> };
     }
   };
@@ -77,7 +80,9 @@ const UserDashboard: React.FC<Props> = ({ onNewEntry, onContinueEntry, onViewEnt
     if (!window.confirm("Are you sure you want to delete this draft?")) return;
     try {
       await deleteDoc(doc(db, 'operational_entries', id));
+      toast.success("Draft deleted successfully");
     } catch (error) {
+      toast.error(`Delete failed: ${getErrorMessage(error)}`);
       handleFirestoreError(error, OperationType.DELETE, `operational_entries/${id}`);
     }
   };
@@ -92,6 +97,34 @@ const UserDashboard: React.FC<Props> = ({ onNewEntry, onContinueEntry, onViewEnt
 
   return (
     <div className="space-y-8 pb-20 px-4">
+      {/* Drive Connection Status */}
+      {!localStorage.getItem('google_drive_token') && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-red-50 border border-red-100 rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600">
+               <AlertCircle className="h-6 w-6" />
+            </div>
+            <div>
+               <h3 className="text-red-900 font-bold">Google Drive Disconnected</h3>
+               <p className="text-red-700 text-xs font-medium">Files cannot be uploaded until you re-authenticate with Google Drive access.</p>
+            </div>
+          </div>
+          <Button 
+            variant="destructive" 
+            onClick={() => {
+              import('../lib/firebase').then(({ auth }) => auth.signOut());
+            }}
+            className="rounded-xl h-12 px-6 font-black uppercase text-[10px] tracking-widest"
+          >
+            Log Out to Reconnect
+          </Button>
+        </motion.div>
+      )}
+      
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-navy-900 mb-2">
@@ -126,7 +159,7 @@ const UserDashboard: React.FC<Props> = ({ onNewEntry, onContinueEntry, onViewEnt
         <AnimatePresence>
           {filteredEntries.map((entry) => {
             const status = getStatusInfo(entry.status);
-            const canContinue = ['Draft', 'Ongoing', 'For Liquidation'].includes(entry.status);
+            const canContinue = ['Draft', 'Ongoing', 'For Liquidation', 'Needs Revision'].includes(entry.status);
             
             return (
               <motion.div

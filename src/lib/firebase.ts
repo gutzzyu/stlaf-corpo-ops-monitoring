@@ -1,6 +1,5 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getStorage } from 'firebase/storage';
 import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfigLocal from '../../firebase-applet-config.json';
 
@@ -22,7 +21,6 @@ export const db = initializeFirestore(app, {
 }, databaseId);
 
 export const auth = getAuth(app);
-export const storage = getStorage(app);
 
 export enum OperationType {
   CREATE = 'create',
@@ -69,4 +67,30 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
+}
+
+export function getErrorMessage(error: any): string {
+  if (!error) return 'An unknown error occurred';
+  
+  const message = error instanceof Error ? error.message : String(error);
+  
+  // If the message starts with <, it's likely an HTML page, not JSON
+  if (message.trim().startsWith('<')) {
+    return 'The server encountered an unexpected error and returned an HTML response. Please try again later.';
+  }
+  
+  try {
+    // Check if the message is a JSON string (likely from handleFirestoreError)
+    if (message.trim().startsWith('{')) {
+      const parsed = JSON.parse(message);
+      if (parsed.error && typeof parsed.error === 'string') {
+        return parsed.error;
+      }
+      return parsed.message || message;
+    }
+  } catch {
+    // Not JSON, just return original message
+  }
+  
+  return message;
 }
