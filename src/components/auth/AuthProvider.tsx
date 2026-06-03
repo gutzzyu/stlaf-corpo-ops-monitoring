@@ -63,7 +63,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  const isProfileComplete = !!(userData?.displayName && userData?.department);
+  const isProfileComplete = !!(userData?.displayName && userData?.department && userData?.contactNumber);
 
   return (
     <AuthContext.Provider value={{ 

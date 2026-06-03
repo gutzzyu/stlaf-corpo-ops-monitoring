@@ -7,6 +7,7 @@ export interface UserProfile {
   email: string;
   displayName: string;
   department: string;
+  contactNumber?: string;
   role: 'user' | 'admin';
   createdAt: Timestamp;
 }

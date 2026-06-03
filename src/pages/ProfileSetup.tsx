@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ShieldCheck, User, Building2, Rocket } from 'lucide-react';
+import { ShieldCheck, User, Building2, Rocket, Phone } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
@@ -26,12 +26,13 @@ const ProfileSetup: React.FC = () => {
   const { user, userData } = useAuth();
   const [fullName, setFullName] = useState(userData?.displayName || user?.displayName || '');
   const [department, setDepartment] = useState(userData?.department || '');
+  const [contactNumber, setContactNumber] = useState(userData?.contactNumber || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    if (!fullName.trim() || !department) {
+    if (!fullName.trim() || !department || !contactNumber.trim()) {
       toast.error("Please fill in all fields");
       return;
     }
@@ -43,6 +44,7 @@ const ProfileSetup: React.FC = () => {
         email: user.email,
         displayName: fullName,
         department: department,
+        contactNumber: contactNumber.trim(),
         role: userData?.role || 'user',
         updatedAt: serverTimestamp(),
         createdAt: userData?.createdAt || serverTimestamp(),
@@ -96,7 +98,7 @@ const ProfileSetup: React.FC = () => {
                 />
               </div>
 
-              <div className="space-y-2">
+               <div className="space-y-2">
                 <Label htmlFor="department" className="text-[10px] font-black uppercase tracking-[0.2em] text-navy-900 flex items-center gap-2">
                   <Building2 className="h-3 w-3" /> Department
                 </Label>
@@ -112,6 +114,20 @@ const ProfileSetup: React.FC = () => {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="contactNumber" className="text-[10px] font-black uppercase tracking-[0.2em] text-navy-900 flex items-center gap-2">
+                  <Phone className="h-3 w-3" /> Contact Number
+                </Label>
+                <Input
+                  id="contactNumber"
+                  value={contactNumber}
+                  onChange={(e) => setContactNumber(e.target.value)}
+                  placeholder="e.g. +63 912 345 6789"
+                  className="h-14 rounded-2xl bg-slate-50 border-none font-bold text-navy-950 placeholder:text-slate-300 focus:ring-2 focus:ring-navy-900 transition-all shrink-0"
+                  required
+                />
               </div>
             </form>
           </CardContent>
