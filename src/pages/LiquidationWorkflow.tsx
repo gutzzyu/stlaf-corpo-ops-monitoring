@@ -89,6 +89,88 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
     }
   ]);
   const [proofSlips, setProofSlips] = useState<(ProofSlip & { pendingFile?: File })[]>(entry.proofSlips || []);
+  const [stepOneErrors, setStepOneErrors] = useState<Record<string, { purpose?: string; amount?: string; attachment?: string }>>({});
+  const [stepTwoErrors, setStepTwoErrors] = useState<Record<string, { dateOfReceipt?: string; supplierName?: string; account?: string; amount?: string; attachment?: string }>>({});
+
+  const handleStepOneContinue = () => {
+    if (!hasReimbursements) {
+      setStepOneErrors({});
+      setStep(2);
+      return;
+    }
+
+    const errors: Record<string, { purpose?: string; amount?: string; attachment?: string }> = {};
+    let hasError = false;
+
+    reimbursements.forEach(r => {
+      const fieldErrors: { purpose?: string; amount?: string; attachment?: string } = {};
+      if (!r.purpose || !r.purpose.trim()) {
+        fieldErrors.purpose = "Purpose of reimbursement is required.";
+        hasError = true;
+      }
+      if (!r.amount || r.amount <= 0) {
+        fieldErrors.amount = "A valid positive reimbursement amount is required.";
+        hasError = true;
+      }
+      if (!r.driveUrl && !r.pendingFile) {
+        fieldErrors.attachment = "A clear receipt scan or image attachment is required.";
+        hasError = true;
+      }
+
+      if (Object.keys(fieldErrors).length > 0) {
+        errors[r.id] = fieldErrors;
+      }
+    });
+
+    if (hasError) {
+      setStepOneErrors(errors);
+      toast.error("Please fill in all requested fields and attach supporting documents before proceeding.");
+    } else {
+      setStepOneErrors({});
+      setStep(2);
+    }
+  };
+
+  const handleStepTwoContinue = () => {
+    const errors: Record<string, { dateOfReceipt?: string; supplierName?: string; account?: string; amount?: string; attachment?: string }> = {};
+    let hasError = false;
+
+    liquidationItems.forEach(item => {
+      const fieldErrors: { dateOfReceipt?: string; supplierName?: string; account?: string; amount?: string; attachment?: string } = {};
+      if (!item.dateOfReceipt) {
+        fieldErrors.dateOfReceipt = "Date of receipt is required.";
+        hasError = true;
+      }
+      if (!item.supplierName || !item.supplierName.trim() || item.supplierName.trim().toUpperCase() === 'N/A') {
+        fieldErrors.supplierName = "A valid registered supplier name is required.";
+        hasError = true;
+      }
+      if (!item.account) {
+        fieldErrors.account = "Account classification is required.";
+        hasError = true;
+      }
+      if (!item.amount || item.amount <= 0) {
+        fieldErrors.amount = "A valid positive expense amount is required (greater than ₱0).";
+        hasError = true;
+      }
+      if (!item.driveUrl && !item.pendingFile && !item.requiresProofSlip) {
+        fieldErrors.attachment = "A valid receipt scan attachment or a marked Proof Slip explanation is required.";
+        hasError = true;
+      }
+
+      if (Object.keys(fieldErrors).length > 0) {
+        errors[item.id] = fieldErrors;
+      }
+    });
+
+    if (hasError) {
+      setStepTwoErrors(errors);
+      toast.error("Please fill out all missing expense parameters and upload receipts before proceeding.");
+    } else {
+      setStepTwoErrors({});
+      setStep(3);
+    }
+  };
 
   // Preview state
   const [previewFile, setPreviewFile] = useState<{ url: string; name: string } | null>(null);
@@ -417,133 +499,207 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                  {hasReimbursements && (
                    <div className="space-y-6">
                       <AnimatePresence>
-                        {reimbursements.map((r, idx) => (
-                          <motion.div 
-                            key={r.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="p-6 bg-white border border-slate-100 rounded-3xl space-y-4 shadow-sm relative group"
-                          >
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => removeReimbursement(r.id)}
-                              className="absolute top-4 right-4 h-8 w-8 text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                        {reimbursements.map((r, idx) => {
+                          const errors = stepOneErrors[r.id];
+                          return (
+                            <motion.div 
+                              key={r.id}
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -10 }}
+                              className={`p-6 bg-white border rounded-3xl space-y-4 shadow-sm relative group transition-all ${
+                                errors ? "border-red-200 bg-red-50/5" : "border-slate-100"
+                              }`}
                             >
-                              <X className="h-4 w-4" />
-                            </Button>
-                            <div className="grid gap-4 md:grid-cols-2">
-                               <div className="space-y-2">
-                                  <Label className="micro-label">Purpose</Label>
-                                  <Input 
-                                    value={r.purpose}
-                                    onChange={(e) => {
-                                      const updated = reimbursements.map(item => item.id === r.id ? { ...item, purpose: e.target.value } : item);
-                                      setReimbursements(updated);
-                                    }}
-                                    placeholder="e.g., Extended Client Meeting Lunch"
-                                    className="h-12 rounded-xl bg-slate-50 border-none font-bold"
-                                  />
-                               </div>
-                               <div className="space-y-2">
-                                  <Label className="micro-label font-bold text-emerald-600 italic">Amount (PHP)</Label>
-                                  <div className="relative">
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-emerald-600">₱</span>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => removeReimbursement(r.id)}
+                                className="absolute top-4 right-4 h-8 w-8 text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                              <div className="grid gap-4 md:grid-cols-2">
+                                 <div className="space-y-2">
+                                    <Label className={`micro-label ${errors?.purpose ? "text-red-500 font-bold" : ""}`}>Purpose</Label>
                                     <Input 
-                                      type="number"
-                                      value={r.amount}
+                                      value={r.purpose}
                                       onChange={(e) => {
-                                        const updated = reimbursements.map(item => item.id === r.id ? { ...item, amount: Number(e.target.value) } : item);
+                                        const updated = reimbursements.map(item => item.id === r.id ? { ...item, purpose: e.target.value } : item);
                                         setReimbursements(updated);
+                                        if (errors?.purpose) {
+                                          setStepOneErrors(prev => {
+                                            const copy = { ...prev };
+                                            if (copy[r.id]) {
+                                              const updatedRow = { ...copy[r.id] };
+                                              delete updatedRow.purpose;
+                                              if (Object.keys(updatedRow).length === 0) delete copy[r.id];
+                                              else copy[r.id] = updatedRow;
+                                            }
+                                            return copy;
+                                          });
+                                        }
                                       }}
-                                      className="h-12 pl-10 rounded-xl bg-emerald-50/50 border-none text-xl font-black font-data text-emerald-900"
+                                      placeholder="e.g., Extended Client Meeting Lunch"
+                                      className={`h-12 rounded-xl font-bold border-2 transition-all ${
+                                        errors?.purpose 
+                                          ? "border-red-500 bg-red-50/10 focus-visible:ring-red-500" 
+                                          : "border-transparent bg-slate-50 focus-visible:ring-2 focus-visible:ring-navy-900"
+                                      }`}
                                     />
-                                  </div>
-                               </div>
-                            </div>
-                            <div className="grid gap-4 md:grid-cols-2 items-end">
-                               <div className="space-y-2">
-                                  <Label className="micro-label">Remarks</Label>
-                                  <Input 
-                                    value={r.remarks}
-                                    onChange={(e) => {
-                                      const updated = reimbursements.map(item => item.id === r.id ? { ...item, remarks: e.target.value } : item);
-                                      setReimbursements(updated);
-                                    }}
-                                    placeholder="Context for reimbursement..."
-                                    className="h-12 rounded-xl bg-slate-50 border-none font-medium"
-                                  />
-                               </div>
-                               <div className="space-y-2">
-                                  <Label className="micro-label">Attachment</Label>
-                                  {(r.driveUrl || r.pendingFile) ? (
-                                    <div className="h-12 flex items-center justify-between px-3 bg-emerald-50 rounded-xl border-2 border-emerald-100">
-                                       <div className="flex items-center gap-2 overflow-hidden">
-                                          <div 
-                                            className="w-8 h-8 rounded-lg bg-emerald-100 flex-shrink-0 overflow-hidden cursor-pointer hover:ring-2 hover:ring-emerald-400 transition-all"
-                                            onClick={() => openPreview(r.driveUrl!, r.fileName!)}
-                                          >
-                                            {r.pendingFile ? (
-                                              <FileThumbnail file={r.pendingFile} />
-                                            ) : (
-                                              <Camera className="h-4 w-4 m-auto text-emerald-500" />
-                                            )}
-                                          </div>
-                                          <span className="text-[10px] font-bold text-emerald-700 truncate max-w-[100px]">{r.fileName}</span>
+                                    {errors?.purpose && (
+                                      <p className="text-red-500 font-bold text-[10px] mt-1 flex items-center gap-1 animate-pulse">
+                                        <span className="shrink-0 bg-red-100 text-red-600 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px]">!</span>
+                                        {errors.purpose}
+                                      </p>
+                                    )}
+                                 </div>
+                                <div className="space-y-2">
+                                   <Label className={`micro-label font-bold italic ${errors?.amount ? "text-red-500" : "text-emerald-600"}`}>Amount (PHP)</Label>
+                                   <div className="relative">
+                                     <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-black ${errors?.amount ? "text-red-500" : "text-emerald-600"}`}>₱</span>
+                                     <Input 
+                                       type="number"
+                                       value={r.amount || ""}
+                                       onChange={(e) => {
+                                         const val = e.target.value === "" ? 0 : Number(e.target.value);
+                                         const updated = reimbursements.map(item => item.id === r.id ? { ...item, amount: val } : item);
+                                         setReimbursements(updated);
+                                         if (errors?.amount) {
+                                           setStepOneErrors(prev => {
+                                             const copy = { ...prev };
+                                             if (copy[r.id]) {
+                                               const updatedRow = { ...copy[r.id] };
+                                               delete updatedRow.amount;
+                                               if (Object.keys(updatedRow).length === 0) delete copy[r.id];
+                                               else copy[r.id] = updatedRow;
+                                             }
+                                             return copy;
+                                           });
+                                         }
+                                       }}
+                                       className={`h-12 pl-10 rounded-xl border-2 text-xl font-black font-data transition-all ${
+                                         errors?.amount 
+                                           ? "border-red-500 bg-red-50/10 text-red-900 focus-visible:ring-red-550" 
+                                           : "border-transparent bg-emerald-50/50 text-emerald-900 focus-visible:ring-emerald-550"
+                                       }`}
+                                     />
+                                   </div>
+                                    {errors?.amount && (
+                                      <p className="text-red-500 font-bold text-[10px] mt-1 flex items-center gap-1 animate-pulse">
+                                        <span className="shrink-0 bg-red-100 text-red-600 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px]">!</span>
+                                        {errors.amount}
+                                      </p>
+                                    )}
+                                </div>
+                             </div>
+                             <div className="grid gap-4 md:grid-cols-2 items-end">
+                                <div className="space-y-2">
+                                   <Label className="micro-label">Remarks</Label>
+                                   <Input 
+                                     value={r.remarks}
+                                     onChange={(e) => {
+                                       const updated = reimbursements.map(item => item.id === r.id ? { ...item, remarks: e.target.value } : item);
+                                       setReimbursements(updated);
+                                     }}
+                                     placeholder="Context for reimbursement..."
+                                     className="h-12 rounded-xl bg-slate-50 border-none font-medium text-navy-900 focus-visible:ring-2 focus-visible:ring-navy-900"
+                                   />
+                                </div>
+                                <div className="space-y-2">
+                                   <Label className={`micro-label ${errors?.attachment ? "text-red-500 font-bold" : ""}`}>Attachment</Label>
+                                   {(r.driveUrl || r.pendingFile) ? (
+                                     <div className="h-12 flex items-center justify-between px-3 bg-emerald-50 rounded-xl border-2 border-emerald-100">
+                                        <div className="flex items-center gap-2 overflow-hidden">
+                                           <div 
+                                             className="w-8 h-8 rounded-lg bg-emerald-100 flex-shrink-0 overflow-hidden cursor-pointer hover:ring-2 hover:ring-emerald-400 transition-all"
+                                             onClick={() => openPreview(r.driveUrl!, r.fileName!)}
+                                           >
+                                             {r.pendingFile ? (
+                                               <FileThumbnail file={r.pendingFile} />
+                                             ) : (
+                                               <Camera className="h-4 w-4 m-auto text-emerald-500" />
+                                             )}
+                                           </div>
+                                           <span className="text-[10px] font-bold text-emerald-700 truncate max-w-[100px]">{r.fileName}</span>
+                                        </div>
+                                       <div className="flex items-center gap-2">
+                                           <Button 
+                                             type="button"
+                                             size="sm" 
+                                             variant="ghost" 
+                                             className="h-7 px-2 text-[9px] font-bold uppercase text-emerald-600 hover:bg-emerald-100"
+                                             onClick={() => openPreview(r.driveUrl!, r.fileName!)}
+                                           >
+                                             View
+                                           </Button>
+                                           <BadgeCheck className="h-4 w-4 text-emerald-500" />
+                                           <Button 
+                                             type="button"
+                                             size="sm" 
+                                             variant="ghost" 
+                                             onClick={() => {
+                                               if (r.driveFileId) deleteFileFromDrive(r.driveFileId);
+                                               const updated = reimbursements.map(item => item.id === r.id ? { ...item, driveUrl: '', driveFileId: '', fileName: '', pendingFile: undefined, mimeType: '' } : item);
+                                               setReimbursements(updated);
+                                             }}
+                                             className="h-8 w-8 text-emerald-400"
+                                           >
+                                              <X className="h-4 w-4" />
+                                           </Button>
+                                        </div>
+                                     </div>
+                                   ) : (
+                                     <div className="relative h-12">
+                                       <input 
+                                         type="file" 
+                                         accept="image/*"
+                                         className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                         onChange={(e) => {
+                                           const file = e.target.files?.[0];
+                                           if (file) {
+                                             const updated = reimbursements.map(item => item.id === r.id ? { 
+                                               ...item, 
+                                               pendingFile: file,
+                                               fileName: file.name
+                                             } : item);
+                                             setReimbursements(updated);
+                                             if (errors?.attachment) {
+                                               setStepOneErrors(prev => {
+                                                 const copy = { ...prev };
+                                                 if (copy[r.id]) {
+                                                   const updatedRow = { ...copy[r.id] };
+                                                   delete updatedRow.attachment;
+                                                   if (Object.keys(updatedRow).length === 0) delete copy[r.id];
+                                                   else copy[r.id] = updatedRow;
+                                                 }
+                                                 return copy;
+                                               });
+                                             }
+                                           }
+                                         }}
+                                       />
+                                       <div className={`h-full flex items-center justify-center gap-2 border-2 border-dashed rounded-xl text-xs font-bold transition-all ${
+                                         errors?.attachment 
+                                           ? "border-red-500 bg-red-50/10 text-red-500 hover:bg-red-50/20" 
+                                           : "border-slate-200 text-slate-400 hover:border-navy-900 hover:text-navy-900"
+                                       }`}>
+                                         <Upload className="h-4 w-4" />
+                                         Select Receipt
                                        </div>
-                                      <div className="flex items-center gap-2">
-                                          <Button 
-                                            size="sm" 
-                                            variant="ghost" 
-                                            className="h-7 px-2 text-[9px] font-bold uppercase text-emerald-600 hover:bg-emerald-100"
-                                            onClick={() => openPreview(r.driveUrl!, r.fileName!)}
-                                          >
-                                            View
-                                          </Button>
-                                          <BadgeCheck className="h-4 w-4 text-emerald-500" />
-                                          <Button 
-                                            size="sm" 
-                                            variant="ghost" 
-                                            onClick={() => {
-                                              if (r.driveFileId) deleteFileFromDrive(r.driveFileId);
-                                              const updated = reimbursements.map(item => item.id === r.id ? { ...item, driveUrl: '', driveFileId: '', fileName: '', pendingFile: undefined, mimeType: '' } : item);
-                                              setReimbursements(updated);
-                                            }}
-                                            className="h-8 w-8 text-emerald-400"
-                                          >
-                                             <X className="h-4 w-4" />
-                                          </Button>
-                                       </div>
-                                    </div>
-                                  ) : (
-                                    <div className="relative h-12">
-                                      <input 
-                                        type="file" 
-                                        accept="image/*"
-                                        className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                                        onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file) {
-                                            const updated = reimbursements.map(item => item.id === r.id ? { 
-                                              ...item, 
-                                              pendingFile: file,
-                                              fileName: file.name
-                                            } : item);
-                                            setReimbursements(updated);
-                                          }
-                                        }}
-                                      />
-                                      <div className="h-full flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 font-bold text-xs hover:border-navy-900 hover:text-navy-900 transition-all">
-                                        <Upload className="h-4 w-4" />
-                                        Select Receipt
-                                      </div>
-                                    </div>
-                                  )}
-                               </div>
-                            </div>
-                          </motion.div>
-                        ))}
+                                     </div>
+                                   )}
+                                    {errors?.attachment && (
+                                      <p className="text-red-500 font-bold text-[10px] mt-1 flex items-center gap-1 animate-pulse">
+                                        <span className="shrink-0 bg-red-100 text-red-600 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px]">!</span>
+                                        {errors.attachment}
+                                      </p>
+                                    )}
+                                </div>
+                             </div>
+                           </motion.div>
+                         );
+                        })}
                       </AnimatePresence>
                       <Button 
                         type="button" 
@@ -557,8 +713,8 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                  )}
               </CardContent>
               <CardFooter className="px-10 pb-10">
-                 <Button 
-                   onClick={() => setStep(2)}
+                 <Button
+                   onClick={handleStepOneContinue}
                    className="ml-auto h-16 px-10 rounded-2xl bg-navy-900 hover:bg-navy-800 font-black uppercase text-xs tracking-widest gap-2 group transition-all"
                  >
                    Continue to Liquidation
@@ -587,13 +743,17 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
               </CardHeader>
               <CardContent className="px-10 pb-10 space-y-6">
                  <AnimatePresence>
-                    {liquidationItems.map((item, idx) => (
-                      <motion.div 
-                        key={item.id}
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="p-8 bg-slate-50/50 rounded-[2.5rem] border border-slate-100 space-y-6 relative group"
-                      >
+                    {liquidationItems.map((item, idx) => {
+                      const errors = stepTwoErrors[item.id];
+                      return (
+                        <motion.div 
+                          key={item.id}
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className={`p-8 rounded-[2.5rem] border space-y-6 relative group transition-all ${
+                            errors ? "border-red-200 bg-red-50/5" : "border-slate-100 bg-slate-50/50"
+                          }`}
+                        >
                         <Button 
                           variant="ghost" 
                           size="icon" 
@@ -605,16 +765,38 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                         
                         <div className="grid gap-6 md:grid-cols-4">
                            <div className="space-y-2 md:col-span-1">
-                              <Label className="micro-label">Date of Receipt</Label>
+                              <Label className={`micro-label ${errors?.dateOfReceipt ? "text-red-500 font-bold" : ""}`}>Date of Receipt</Label>
                               <Input 
                                 type="date"
                                 value={item.dateOfReceipt}
                                 onChange={(e) => {
                                   const updated = liquidationItems.map(li => li.id === item.id ? { ...li, dateOfReceipt: e.target.value } : li);
                                   setLiquidationItems(updated);
+                                  if (errors?.dateOfReceipt) {
+                                    setStepTwoErrors(prev => {
+                                      const copy = { ...prev };
+                                      if (copy[item.id]) {
+                                        const updatedRow = { ...copy[item.id] };
+                                        delete updatedRow.dateOfReceipt;
+                                        if (Object.keys(updatedRow).length === 0) delete copy[item.id];
+                                        else copy[item.id] = updatedRow;
+                                      }
+                                      return copy;
+                                    });
+                                  }
                                 }}
-                                className="h-12 rounded-xl bg-white border-none font-bold font-data"
+                                className={`h-12 rounded-xl font-bold font-data border-2 transition-all ${
+                                  errors?.dateOfReceipt 
+                                    ? "border-red-500 bg-red-50/10 focus-visible:ring-red-500 text-red-900" 
+                                    : "border-transparent bg-white focus-visible:ring-2 focus-visible:ring-navy-900"
+                                }`}
                               />
+                              {errors?.dateOfReceipt && (
+                                <p className="text-red-500 font-bold text-[9px] mt-1 flex items-center gap-1 animate-pulse">
+                                  <span className="shrink-0 bg-red-100 text-red-600 w-3 h-3 rounded-full flex items-center justify-center text-[8px]">!</span>
+                                  {errors.dateOfReceipt}
+                                </p>
+                              )}
                            </div>
                            <div className="space-y-2">
                               <Label className="micro-label">Entity</Label>
@@ -666,16 +848,38 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                               />
                            </div>
                            <div className="space-y-2">
-                              <Label className="micro-label">Supplier's Name</Label>
+                              <Label className={`micro-label ${errors?.supplierName ? "text-red-500 font-bold" : ""}`}>Supplier's Name</Label>
                               <Input 
                                 value={item.supplierName}
                                 onChange={(e) => {
                                   const updated = liquidationItems.map(li => li.id === item.id ? { ...li, supplierName: e.target.value } : li);
                                   setLiquidationItems(updated);
+                                  if (errors?.supplierName) {
+                                    setStepTwoErrors(prev => {
+                                      const copy = { ...prev };
+                                      if (copy[item.id]) {
+                                        const updatedRow = { ...copy[item.id] };
+                                        delete updatedRow.supplierName;
+                                        if (Object.keys(updatedRow).length === 0) delete copy[item.id];
+                                        else copy[item.id] = updatedRow;
+                                      }
+                                      return copy;
+                                    });
+                                  }
                                 }}
                                 placeholder="e.g., Shell SLEX"
-                                className="h-12 rounded-xl bg-white border-none font-bold"
+                                className={`h-12 rounded-xl font-bold border-2 transition-all ${
+                                  errors?.supplierName 
+                                    ? "border-red-500 bg-red-50/10 focus-visible:ring-red-500 text-red-900" 
+                                    : "border-transparent bg-white focus-visible:ring-2 focus-visible:ring-navy-900"
+                                }`}
                               />
+                              {errors?.supplierName && (
+                                <p className="text-red-500 font-bold text-[9px] mt-1 flex items-center gap-1 animate-pulse">
+                                  <span className="shrink-0 bg-red-100 text-red-600 w-3 h-3 rounded-full flex items-center justify-center text-[8px]">!</span>
+                                  {errors.supplierName}
+                                </p>
+                              )}
                            </div>
                         </div>
 
@@ -693,21 +897,43 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                               />
                            </div>
                            <div className="space-y-2">
-                              <Label className="micro-label">Account</Label>
+                              <Label className={`micro-label ${errors?.account ? "text-red-500 font-bold" : ""}`}>Account</Label>
                               <Select 
                                 value={item.account} 
                                 onValueChange={(val) => {
                                   const updated = liquidationItems.map(li => li.id === item.id ? { ...li, account: val } : li);
                                   setLiquidationItems(updated);
+                                  if (errors?.account) {
+                                    setStepTwoErrors(prev => {
+                                      const copy = { ...prev };
+                                      if (copy[item.id]) {
+                                        const updatedRow = { ...copy[item.id] };
+                                        delete updatedRow.account;
+                                        if (Object.keys(updatedRow).length === 0) delete copy[item.id];
+                                        else copy[item.id] = updatedRow;
+                                      }
+                                      return copy;
+                                    });
+                                  }
                                 }}
                               >
-                                <SelectTrigger className="h-12 rounded-xl bg-white border-none font-bold">
+                                <SelectTrigger className={`h-12 rounded-xl font-bold border-2 transition-all ${
+                                  errors?.account 
+                                    ? "border-red-500 bg-red-50/10 focus-visible:ring-red-500 text-red-900 animate-pulse" 
+                                    : "border-transparent bg-white focus-visible:ring-2 focus-visible:ring-navy-900"
+                                }`}>
                                   <SelectValue placeholder="Select Account" />
                                 </SelectTrigger>
                                 <SelectContent className="rounded-xl border-none shadow-xl bg-white">
                                   {ACCOUNT_CHOICES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                                 </SelectContent>
                               </Select>
+                              {errors?.account && (
+                                <p className="text-red-500 font-bold text-[9px] mt-1 flex items-center gap-1 animate-pulse">
+                                  <span className="shrink-0 bg-red-100 text-red-600 w-3 h-3 rounded-full flex items-center justify-center text-[8px]">!</span>
+                                  {errors.account}
+                                </p>
+                              )}
                            </div>
                         </div>
 
@@ -850,16 +1076,26 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
 
                         <div className="grid gap-6 md:grid-cols-2 items-end">
                            <div className="space-y-2">
-                              <Label className="micro-label font-bold text-amber-600 italic">Total Amount (PHP)</Label>
+                              <Label className={`micro-label font-bold italic ${errors?.amount ? "text-red-500" : "text-amber-600"}`}>Total Amount (PHP)</Label>
                               <div className="relative">
-                                <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-amber-600">₱</span>
+                                <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-black ${errors?.amount ? "text-red-500" : "text-amber-600"}`}>₱</span>
                                 <Input 
                                   type="number"
                                   readOnly
                                   value={item.amount}
-                                  className="h-14 pl-10 rounded-xl bg-white/50 border-none text-2xl font-black font-data text-navy-900 cursor-not-allowed"
+                                  className={`h-14 pl-10 rounded-xl text-2xl font-black font-data cursor-not-allowed border-2 transition-all ${
+                                    errors?.amount 
+                                      ? "border-red-500 bg-red-50/10 text-red-900" 
+                                      : "border-transparent bg-white/50 text-navy-900"
+                                  }`}
                                 />
                               </div>
+                              {errors?.amount && (
+                                <p className="text-red-500 font-bold text-[9px] mt-1 flex items-center gap-1 animate-pulse">
+                                  <span className="shrink-0 bg-red-100 text-red-600 w-3 h-3 rounded-full flex items-center justify-center text-[8px]">!</span>
+                                  {errors.amount}
+                                </p>
+                              )}
                            </div>
                            <div className="space-y-2">
                               <Label className="micro-label">Receipt Proof</Label>
@@ -906,8 +1142,9 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                                      </div>
                                   </div>
                                 ) : (
-                                  <div className="relative h-14">
-                                    <input 
+                                   <>
+                                     <div className="relative h-14">
+                                       <input 
                                       type="file" 
                                       accept="image/*"
                                       className="absolute inset-0 opacity-0 cursor-pointer z-10"
@@ -920,15 +1157,38 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                                             fileName: file.name
                                           } : li);
                                           setLiquidationItems(updated);
+                                          if (errors?.attachment) {
+                                            setStepTwoErrors(prev => {
+                                              const copy = { ...prev };
+                                              if (copy[item.id]) {
+                                                const updatedRow = { ...copy[item.id] };
+                                                delete updatedRow.attachment;
+                                                if (Object.keys(updatedRow).length === 0) delete copy[item.id];
+                                                else copy[item.id] = updatedRow;
+                                              }
+                                              return copy;
+                                            });
+                                          }
                                         }
                                       }}
                                     />
-                                    <div className="h-full flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 font-bold text-xs hover:border-navy-900 hover:text-navy-900 transition-all bg-white">
+                                    <div className={`h-full flex items-center justify-center gap-2 border-2 border-dashed rounded-xl text-xs font-bold transition-all ${
+                                      errors?.attachment 
+                                        ? "border-red-500 bg-red-50/10 text-red-500 hover:bg-red-50/20" 
+                                        : "border-slate-200 bg-white text-slate-400 hover:border-navy-900 hover:text-navy-900"
+                                    }`}>
                                       <Camera className="h-5 w-5" />
                                       Snap Receipt
-                                    </div>
-                                  </div>
-                                )
+                                     </div>
+                                   </div>
+                                   {errors?.attachment && (
+                                    <p className="text-red-500 font-bold text-[9px] mt-1 flex items-center gap-1 animate-pulse">
+                                      <span className="shrink-0 bg-red-100 text-red-600 w-3 h-3 rounded-full flex items-center justify-center text-[8px]">!</span>
+                                      {errors.attachment}
+                                    </p>
+                                  )}
+                                   </>
+                                 )
                               ) : (
                                 <div className="h-14 flex items-center gap-2 px-4 bg-amber-50 rounded-xl border-2 border-amber-100 text-amber-700 font-bold text-[10px] uppercase tracking-wider">
                                    <FileText className="h-4 w-4" />
@@ -1047,7 +1307,8 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                           </motion.div>
                         )}
                       </motion.div>
-                    ))}
+                    );
+                   })}
                  </AnimatePresence>
 
                  <Button 
@@ -1069,7 +1330,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                    Reimbursements
                  </Button>
                  <Button 
-                   onClick={() => setStep(3)}
+                   onClick={handleStepTwoContinue}
                    className="h-16 px-10 rounded-2xl bg-navy-900 hover:bg-navy-800 font-black uppercase text-xs tracking-widest gap-2 group transition-all"
                  >
                    Review & Finalize

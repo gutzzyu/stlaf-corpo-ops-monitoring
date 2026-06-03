@@ -62,24 +62,43 @@ function Navigation() {
   const [profileDepartment, setProfileDepartment] = useState("");
   const [profileContact, setProfileContact] = useState("");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileErrors, setProfileErrors] = useState<{ name?: string; department?: string; contact?: string }>({});
 
   const handleOpenProfileEdit = () => {
     setProfileName(userData?.displayName || user?.displayName || "");
     setProfileDepartment(userData?.department || "");
     setProfileContact(userData?.contactNumber || "");
+    setProfileErrors({});
     setIsProfileEditDialogOpen(true);
   };
 
   const handleSaveProfile = async () => {
     if (!user) return;
-    if (
-      !profileName.trim() ||
-      !profileDepartment.trim() ||
-      !profileContact.trim()
-    ) {
-      toast.error("Please fill in all fields.");
+
+    const newErrors: { name?: string; department?: string; contact?: string } = {};
+    if (!profileName.trim()) {
+      newErrors.name = "Full legal name is required.";
+    } else if (profileName.trim().length < 2) {
+      newErrors.name = "Name must be at least 2 characters long.";
+    }
+
+    if (!profileDepartment) {
+      newErrors.department = "Department assignment is required.";
+    }
+
+    if (!profileContact.trim()) {
+      newErrors.contact = "Contact number is required.";
+    } else if (profileContact.trim().length < 7) {
+      newErrors.contact = "Contact number must be a valid 7 to 11 digit telephone or mobile format.";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setProfileErrors(newErrors);
+      toast.error("Please fill in all required fields correctly.");
       return;
     }
+
+    setProfileErrors({});
     setIsSavingProfile(true);
     const toastId = toast.loading("Updating your profile details...");
     try {
@@ -451,11 +470,21 @@ function Navigation() {
               <Input
                 id="prof-name"
                 value={profileName}
-                onChange={(e) => setProfileName(e.target.value)}
+                onChange={(e) => {
+                  setProfileName(e.target.value);
+                  if (profileErrors.name) setProfileErrors(prev => ({ ...prev, name: undefined }));
+                }}
                 placeholder="Full Name"
-                className="h-12 rounded-xl bg-slate-50 border-none font-bold text-navy-950"
-                required
+                className={`h-12 rounded-xl bg-slate-50 border-2 font-bold text-navy-950 transition-all ${
+                  profileErrors.name ? "border-red-500 bg-red-50/10" : "border-transparent focus:ring-2 focus:ring-navy-900"
+                }`}
               />
+              {profileErrors.name && (
+                <p className="text-red-500 font-bold text-[11px] mt-1 flex items-start gap-1 py-1 px-2.5 bg-red-50/50 rounded-lg">
+                  <span className="shrink-0 bg-red-500 text-white w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black mt-0.5">!</span>
+                  <span>{profileErrors.name} Enter your full legal name.</span>
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -468,9 +497,13 @@ function Navigation() {
               <select
                 id="prof-dept"
                 value={profileDepartment}
-                onChange={(e) => setProfileDepartment(e.target.value)}
-                className="w-full h-12 px-4 rounded-xl bg-slate-50 border-none font-bold text-navy-950 focus:ring-2 focus:ring-navy-900 focus:outline-none"
-                required
+                onChange={(e) => {
+                  setProfileDepartment(e.target.value);
+                  if (profileErrors.department) setProfileErrors(prev => ({ ...prev, department: undefined }));
+                }}
+                className={`w-full h-12 px-4 rounded-xl bg-slate-50 border-2 font-bold text-navy-950 focus:outline-none transition-all ${
+                  profileErrors.department ? "border-red-500 bg-red-50/10" : "border-transparent focus:ring-2 focus:ring-navy-900"
+                }`}
               >
                 <option value="" disabled>
                   Select Department
@@ -481,6 +514,12 @@ function Navigation() {
                   </option>
                 ))}
               </select>
+              {profileErrors.department && (
+                <p className="text-red-500 font-bold text-[11px] mt-1 flex items-start gap-1 py-1 px-2.5 bg-red-50/50 rounded-lg">
+                  <span className="shrink-0 bg-red-500 text-white w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black mt-0.5">!</span>
+                  <span>{profileErrors.department} Select your primary organizational division.</span>
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -493,11 +532,21 @@ function Navigation() {
               <Input
                 id="prof-contact"
                 value={profileContact}
-                onChange={(e) => setProfileContact(e.target.value)}
+                onChange={(e) => {
+                  setProfileContact(e.target.value);
+                  if (profileErrors.contact) setProfileErrors(prev => ({ ...prev, contact: undefined }));
+                }}
                 placeholder="e.g. +63 912 345 6789"
-                className="h-12 rounded-xl bg-slate-50 border-none font-bold text-navy-950"
-                required
+                className={`h-12 rounded-xl bg-slate-50 border-2 font-bold text-navy-950 transition-all ${
+                  profileErrors.contact ? "border-red-500 bg-red-50/10" : "border-transparent focus:ring-2 focus:ring-navy-900"
+                }`}
               />
+              {profileErrors.contact && (
+                <p className="text-red-500 font-bold text-[11px] mt-1 flex items-start gap-1 py-1 px-2.5 bg-red-50/50 rounded-lg">
+                  <span className="shrink-0 bg-red-500 text-white w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black mt-0.5">!</span>
+                  <span>{profileErrors.contact} Provide an active reachable mobile number.</span>
+                </p>
+              )}
             </div>
 
             <DialogFooter className="gap-3 sm:gap-0 pt-4 border-t border-slate-100">
