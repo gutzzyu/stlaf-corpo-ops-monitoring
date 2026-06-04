@@ -197,6 +197,24 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
         </div>
       </div>
 
+      {entry?.status === 'Needs Revision' && entry.adminNotes && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 p-6 bg-amber-50 rounded-3xl border-2 border-amber-100 flex gap-4 text-left"
+        >
+          <div className="shrink-0 mt-0.5 bg-amber-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-black">
+             !
+          </div>
+          <div className="space-y-1">
+            <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">Revision Instructions from Admin</span>
+            <p className="text-sm font-bold text-amber-900 leading-relaxed">
+              {entry.adminNotes}
+            </p>
+          </div>
+        </motion.div>
+      )}
+
       <Card className="border-none shadow-2xl shadow-navy-900/5 rounded-[2rem] sm:rounded-[3rem] overflow-hidden bg-white">
         <div className="h-2 bg-navy-900 w-full" />
         <CardHeader className="p-5 sm:p-10 pb-4 sm:pb-6 text-left">

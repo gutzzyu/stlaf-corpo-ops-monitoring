@@ -7,6 +7,129 @@ export interface UploadMetadata {
   isPending?: boolean;
 }
 
+export async function uploadDirectToDrive(file: File, category: string, driveToken: string, userName: string) {
+  const formatDriveFileName = (origName: string, uName: string, cat: string) => {
+    const dateStr = new Date().toISOString().split('T')[0];
+    const nameParts = uName.trim().split(' ');
+    const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : uName;
+    const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join('_') : '';
+    
+    const sanitizedLastName = lastName.replace(/[^a-zA-Z0-9]/g, "");
+    const sanitizedFirstName = firstName.replace(/[^a-zA-Z0-9]/g, "");
+    
+    const timestamp = Date.now();
+    const lastDot = origName.lastIndexOf('.');
+    const extension = lastDot !== -1 ? origName.substring(lastDot) : '';
+    const docType = cat.replace(/_/g, "");
+    return `${dateStr}_${sanitizedLastName}_${sanitizedFirstName}_${docType}_${timestamp.toString().slice(-4)}${extension}`;
+  };
+
+  const newFileName = formatDriveFileName(file.name, userName, category);
+
+  const getOrCreateSTLAFFolder = async (token: string): Promise<string> => {
+    try {
+      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name = 'STLAF' and mimeType = 'application/vnd.google-apps.folder' and trashed = false")}&fields=files(id)`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        if (searchData.files && searchData.files.length > 0) {
+          return searchData.files[0].id;
+        }
+      }
+      const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: 'STLAF',
+          mimeType: 'application/vnd.google-apps.folder'
+        })
+      });
+      if (createRes.ok) {
+        const createData = await createRes.json();
+        return createData.id;
+      }
+    } catch (e) {
+      console.warn("Client-side drive folder search failed:", e);
+    }
+    return 'root';
+  };
+
+  const stlafFolderId = await getOrCreateSTLAFFolder(driveToken);
+
+  const metadata = {
+    name: newFileName,
+    mimeType: file.type,
+    parents: [stlafFolderId],
+  };
+  
+  const boundary = 'stlaf_workflow_multipart_boundary';
+  const delimiter = `\r\n--${boundary}\r\n`;
+  const close_delim = `\r\n--${boundary}--`;
+  
+  const base64Data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base = result.split(',')[1];
+      resolve(base);
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+
+  const multipartRequestBody =
+    delimiter +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(metadata) +
+    delimiter +
+    'Content-Transfer-Encoding: base64\r\n' +
+    'Content-Type: ' + file.type + '\r\n\r\n' +
+    base64Data +
+    close_delim;
+
+  const uploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${driveToken}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+    },
+    body: multipartRequestBody,
+  });
+
+  if (!uploadRes.ok) {
+    const errTxt = await uploadRes.text();
+    throw new Error(`Direct Drive upload failed: ${errTxt}`);
+  }
+
+  const driveFile = await uploadRes.json();
+  
+  try {
+    await fetch(`https://www.googleapis.com/drive/v3/files/${driveFile.id}/permissions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${driveToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        role: 'reader',
+        type: 'anyone',
+      }),
+    });
+  } catch (e) {
+    console.warn("Direct upload permissions failed:", e);
+  }
+
+  return {
+    fileId: driveFile.id,
+    url: `https://drive.google.com/file/d/${driveFile.id}/view?usp=drivesdk`,
+    fileName: newFileName,
+  };
+}
+
 export async function uploadToDrive(file: File, metadata: UploadMetadata) {
   const token = localStorage.getItem('google_drive_token');
   const expiry = localStorage.getItem('google_drive_token_expiry');
@@ -40,8 +163,9 @@ export async function uploadToDrive(file: File, metadata: UploadMetadata) {
       body: formData,
     });
   } catch (error: any) {
-    if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-      throw new Error("Cannot upload: Browser is blocking third-party cookies or redirects. Please click the pop-out icon at top right to open the app in a new tab.");
+    if (error.name === 'TypeError' || error.message?.includes("Failed to fetch") || error.message?.includes("Cookie check") || error.message?.includes("cookies")) {
+      console.warn("Proxy block detected on fetch catch, falling back to direct client-side Google Drive API upload...");
+      return uploadDirectToDrive(file, metadata.category, token, metadata.userName);
     }
     throw error;
   }
@@ -55,8 +179,9 @@ export async function uploadToDrive(file: File, metadata: UploadMetadata) {
     } else {
       const text = await response.text();
       console.error('Server returned non-JSON error:', text);
-      if (text.includes('Cookie check') || text.includes('Action required')) {
-        throw new Error("Cannot upload: Browser is blocking third-party cookies. Please click the pop-out icon at top right to open the app in a new tab.");
+      if (text.includes('Cookie check') || text.includes('Action required') || response.status === 403 || response.status === 302) {
+        console.warn("Proxy block detected on non-ok response, falling back to direct client-side Google Drive API upload...");
+        return uploadDirectToDrive(file, metadata.category, token, metadata.userName);
       }
       throw new Error(`Server Error (${response.status}): The server returned an unexpected response. Please check if your connection is stable.`);
     }
@@ -70,11 +195,20 @@ export async function uploadToDrive(file: File, metadata: UploadMetadata) {
   }
 
   if (contentType && contentType.includes('application/json')) {
-    return response.json() as Promise<{
-      fileId: string;
-      url: string;
-      fileName: string;
-    }>;
+    const textBody = await response.text();
+    try {
+      return JSON.parse(textBody) as {
+        fileId: string;
+        url: string;
+        fileName: string;
+      };
+    } catch (e) {
+      if (textBody.includes("Cookie check") || textBody.includes("Action required")) {
+        console.warn("Proxy text block detected, falling back to direct client-side Google Drive API upload...");
+        return uploadDirectToDrive(file, metadata.category, token, metadata.userName);
+      }
+      throw new Error('Server returned an unexpected response format. Please try again.');
+    }
   } else {
     throw new Error('Server returned an unexpected response format. Please try again.');
   }

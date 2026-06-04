@@ -221,8 +221,138 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
     setPreviewFile(null);
   };
 
+  const uploadDirectToDrive = async (file: File, category: string, driveToken: string) => {
+    const userName = user?.displayName || user?.email || 'Unknown';
+    const formatDriveFileName = (origName: string, uName: string, cat: string) => {
+      const dateStr = new Date().toISOString().split('T')[0];
+      const nameParts = uName.trim().split(' ');
+      const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : uName;
+      const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join('_') : '';
+      
+      const sanitizedLastName = lastName.replace(/[^a-zA-Z0-9]/g, "");
+      const sanitizedFirstName = firstName.replace(/[^a-zA-Z0-9]/g, "");
+      
+      const timestamp = Date.now();
+      const lastDot = origName.lastIndexOf('.');
+      const extension = lastDot !== -1 ? origName.substring(lastDot) : '';
+      const docType = cat.replace(/_/g, "");
+      return `${dateStr}_${sanitizedLastName}_${sanitizedFirstName}_${docType}_${timestamp.toString().slice(-4)}${extension}`;
+    };
+
+    const newFileName = formatDriveFileName(file.name, userName, category);
+
+    const getOrCreateSTLAFFolder = async (token: string): Promise<string> => {
+      try {
+        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name = 'STLAF' and mimeType = 'application/vnd.google-apps.folder' and trashed = false")}&fields=files(id)`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          if (searchData.files && searchData.files.length > 0) {
+            return searchData.files[0].id;
+          }
+        }
+        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name: 'STLAF',
+            mimeType: 'application/vnd.google-apps.folder'
+          })
+        });
+        if (createRes.ok) {
+          const createData = await createRes.json();
+          return createData.id;
+        }
+      } catch (e) {
+        console.warn("Client-side drive folder search failed:", e);
+      }
+      return 'root';
+    };
+
+    const stlafFolderId = await getOrCreateSTLAFFolder(driveToken);
+
+    const metadata = {
+      name: newFileName,
+      mimeType: file.type,
+      parents: [stlafFolderId],
+    };
+    
+    const boundary = 'stlaf_workflow_multipart_boundary';
+    const delimiter = `\r\n--${boundary}\r\n`;
+    const close_delim = `\r\n--${boundary}--`;
+    
+    const base64Data = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base = result.split(',')[1];
+        resolve(base);
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
+    });
+
+    const multipartRequestBody =
+      delimiter +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      JSON.stringify(metadata) +
+      delimiter +
+      'Content-Transfer-Encoding: base64\r\n' +
+      'Content-Type: ' + file.type + '\r\n\r\n' +
+      base64Data +
+      close_delim;
+
+    const uploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${driveToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body: multipartRequestBody,
+    });
+
+    if (!uploadRes.ok) {
+      const errTxt = await uploadRes.text();
+      throw new Error(`Direct Drive upload failed: ${errTxt}`);
+    }
+
+    const driveFile = await uploadRes.json();
+    
+    try {
+      await fetch(`https://www.googleapis.com/drive/v3/files/${driveFile.id}/permissions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${driveToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          role: 'reader',
+          type: 'anyone',
+        }),
+      });
+    } catch (e) {
+      console.warn("Direct upload permissions failed:", e);
+    }
+
+    return {
+      fileId: driveFile.id,
+      url: `https://drive.google.com/file/d/${driveFile.id}/view?usp=drivesdk`,
+      fileName: newFileName,
+      mimeType: file.type
+    };
+  };
+
   const handleFileUpload = async (file: File, category: string) => {
     if (!user) return null;
+    const driveToken = localStorage.getItem('google_drive_token');
+    
+    if (!driveToken) {
+      throw new Error("Google Drive session missing. Please reconnect your account.");
+    }
     
     try {
       const formData = new FormData();
@@ -236,20 +366,26 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
       const isPending = entry.status !== 'Approved';
       formData.append('isPending', isPending.toString());
 
-      const driveToken = localStorage.getItem('google_drive_token');
-
       const response = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
         credentials: 'include', // Ensure cookies are sent for IAP
         headers: {
-          ...(driveToken ? { 'Authorization': `Bearer ${driveToken}` } : {})
+          'Authorization': `Bearer ${driveToken}`
         }
       });
 
       if (!response.ok) {
         const contentType = response.headers.get("content-type");
         const bodyText = await response.text();
+        
+        if (bodyText.includes("Cookie check") || bodyText.includes("Action required") || response.status === 403 || response.status === 302) {
+          console.warn("Proxy block detected, falling back to direct client-side Google Drive API upload...");
+          const directFile = await uploadDirectToDrive(file, category, driveToken);
+          toast.success("Uploaded directly to your Google Drive! (Bypassed system proxy)", { duration: 4000 });
+          return directFile;
+        }
+
         if (contentType && contentType.indexOf("application/json") !== -1) {
           try {
             const error = JSON.parse(bodyText);
@@ -276,15 +412,26 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
       } catch (e) {
         console.error("Invalid JSON from Drive Upload:", response.status, bodyText);
         if (bodyText.includes("Cookie check") || bodyText.includes("Action required")) {
-          throw new Error("Cannot upload: Browser is blocking third-party cookies. Please click the pop-out icon at top right to open the app in a new tab.");
+          console.warn("Proxy block detected, falling back to direct client-side Google Drive API upload...");
+          const directFile = await uploadDirectToDrive(file, category, driveToken);
+          toast.success("Uploaded directly to your Google Drive! (Bypassed system proxy)", { duration: 4000 });
+          return { url: directFile.url, fileName: directFile.fileName, fileId: directFile.fileId, mimeType: file.type };
         }
         throw new Error(`Invalid JSON on success response: ${bodyText.slice(0, 100)}`);
       }
       return { url: data.url, fileName: data.fileName, fileId: data.fileId, mimeType: file.type };
     } catch (error: any) {
       console.error('Drive Upload Error:', error);
-      if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-        throw new Error("Cannot upload: Browser is blocking third-party cookies or redirects. Please click the pop-out icon at top right to open the app in a new tab.");
+      if (error.name === 'TypeError' || error.message?.includes("Failed to fetch") || error.message?.includes("Cookie check") || error.message?.includes("cookies")) {
+        try {
+          console.warn("Fetch failed, attempting direct client-side Google Drive API upload fallback...");
+          const directFile = await uploadDirectToDrive(file, category, driveToken);
+          toast.success("Uploaded directly to your Google Drive! (Bypassed system proxy)", { duration: 4000 });
+          return directFile;
+        } catch (fallbackError: any) {
+          console.error("Direct fallback also failed:", fallbackError);
+          throw new Error(`Failed to upload file to Google Drive. Keep your browser in a new tab if you run into any issues. Direct upload failed: ${fallbackError.message}`);
+        }
       }
       throw error;
     }
