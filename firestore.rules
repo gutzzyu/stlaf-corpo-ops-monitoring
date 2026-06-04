@@ -17,6 +17,7 @@ service cloud.firestore {
     // Admin check: strictly look up role in users collection or check bootstrapped developer email
     function isAdminByEmail() {
       return isSignedIn() && 
+             'email' in request.auth.token && 
              request.auth.token.email == 'andrewmanuel310@gmail.com';
     }
 
@@ -50,8 +51,7 @@ service cloud.firestore {
                       (request.auth.uid == userId && 
                        incoming().uid == existing().uid &&
                        incoming().email == existing().email &&
-                       incoming().role == existing().role &&
-                       incoming().createdAt == existing().createdAt) ||
+                       incoming().role == existing().role) ||
                       isAdminByEmail()
                     );
       
