@@ -673,7 +673,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             </div>
             <h1 className="text-5xl md:text-7xl font-black text-navy-900 tracking-tighter italic leading-none">
               Command <br />
-              {adminTab === "missions" ? "Registry." : adminTab === "personnel" ? "Personnel." : "Clients."}
+              {adminTab === "missions" ? <><span className="text-gold-500">Registry.</span></> : adminTab === "personnel" ? <><span className="text-gold-500">Personnel.</span></> : <><span className="text-gold-500">Clients.</span></>}
             </h1>
           </div>
         </div>

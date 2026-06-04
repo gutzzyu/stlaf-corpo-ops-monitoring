@@ -315,7 +315,7 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
       </Dialog>
 
       <Card className="border-none shadow-2xl shadow-navy-900/5 rounded-[3rem] overflow-hidden bg-white">
-        <div className="h-2 bg-navy-900 w-full" />
+        <div className="h-2 bg-gold-500 w-full" />
         <CardHeader className="p-10 pb-6 border-b border-slate-50">
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
             <div className="space-y-4">
@@ -325,7 +325,7 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
               <div className="space-y-1">
                 <CardTitle className="text-4xl md:text-5xl font-black text-navy-900 tracking-tighter leading-none italic">
                   Operational <br />
-                  Registry #{(entry.id || '...').slice(0, 8).toUpperCase()}
+                  <span className="text-gold-500">Registry</span> #{(entry.id || '...').slice(0, 8).toUpperCase()}
                 </CardTitle>
                 <CardDescription className="text-slate-500 font-medium">
                   Official operational documentation for mission control.

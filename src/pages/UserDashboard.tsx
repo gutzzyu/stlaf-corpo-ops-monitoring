@@ -133,12 +133,12 @@ const UserDashboard: React.FC<Props> = ({ onNewEntry, onContinueEntry, onViewEnt
           </div>
           <h1 className="text-4xl md:text-6xl font-black text-navy-900 tracking-tighter leading-none italic">
             Officer <br />
-            Dashboard.
+            <span className="text-gold-500">Dashboard.</span>
           </h1>
         </div>
         <Button 
           onClick={onNewEntry}
-          className="h-16 px-8 rounded-2xl bg-navy-900 hover:bg-navy-800 text-lg font-black gap-2 transition-all hover:gap-4 shadow-xl shadow-navy-900/10 group overflow-hidden"
+          className="h-16 px-8 rounded-2xl bg-gold-500 hover:bg-gold-600 text-white text-lg font-black gap-2 transition-all hover:gap-4 shadow-xl shadow-gold-500/20 group overflow-hidden"
         >
           New Operation
           <Plus className="h-6 w-6 group-hover:rotate-90 transition-transform" />
@@ -219,7 +219,7 @@ const UserDashboard: React.FC<Props> = ({ onNewEntry, onContinueEntry, onViewEnt
                   <CardFooter className="p-6 pt-0">
                     <Button 
                       variant="ghost" 
-                      className="w-full h-12 rounded-xl bg-slate-100 text-navy-900 group-hover:bg-navy-900 group-hover:text-white transition-all font-black text-xs uppercase tracking-widest gap-2"
+                      className="w-full h-12 rounded-xl bg-slate-100 text-navy-900 group-hover:bg-gold-500 group-hover:text-white transition-all font-black text-xs uppercase tracking-widest gap-2"
                     >
                       {canContinue ? 'Continue Workflow' : 'View Summary'}
                       <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />

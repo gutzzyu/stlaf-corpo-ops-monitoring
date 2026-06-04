@@ -96,7 +96,7 @@ const LoginPage: React.FC = () => {
               transition={{ delay: 0.2 }}
               className="text-6xl font-black text-white tracking-tighter italic leading-none"
             >
-              Control <br /> The Flow.
+              Control <br /> The <span className="text-gold-500 text-[110%]">Flow.</span>
             </motion.h1>
             <motion.p 
               initial={{ opacity: 0 }}
@@ -129,12 +129,12 @@ const LoginPage: React.FC = () => {
       {/* Login Side */}
       <div className="flex-1 flex items-center justify-center p-8 bg-slate-50/50">
         <Card className="w-full max-w-md shadow-2xl shadow-navy-900/5 border-none rounded-[2.5rem] bg-white overflow-hidden">
-          <div className="h-1.5 bg-navy-900 w-full" />
+          <div className="h-1.5 bg-gold-500 w-full" />
           <CardHeader className="p-10 pb-6 text-center space-y-2">
             <div className="lg:hidden mx-auto w-12 h-12 bg-navy-900 rounded-xl flex items-center justify-center mb-4">
                <ShieldCheck className="h-7 w-7 text-white" />
             </div>
-            <CardTitle className="text-3xl font-black text-navy-900 tracking-tight">STLAF Ops Hub</CardTitle>
+            <CardTitle className="text-3xl font-black text-navy-900 tracking-tight"><span className="text-gold-500">STLAF</span> Ops Hub</CardTitle>
             <CardDescription className="text-slate-400 font-medium">
               Operational Authentication Required
             </CardDescription>

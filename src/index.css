@@ -17,6 +17,17 @@
   --color-navy-800: #243b53;
   --color-navy-900: #102a43;
 
+  --color-gold-50: #fbf8f0;
+  --color-gold-100: #f5eedb;
+  --color-gold-200: #ecdfb8;
+  --color-gold-300: #e2cc8f;
+  --color-gold-400: #d4b462;
+  --color-gold-500: #ba923e;
+  --color-gold-600: #a07a2d;
+  --color-gold-700: #805c21;
+  --color-gold-800: #694b21;
+  --color-gold-900: #573e1f;
+
   --radius-xs: 0.25rem;
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;

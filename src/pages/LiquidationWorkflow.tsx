@@ -95,9 +95,9 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
       dateOfReceipt: new Date().toISOString().split('T')[0],
       entity: 'CCT',
       department: 'Corporate',
-      tinNo: 'N/A',
-      supplierName: 'N/A',
-      supplierAddress: 'N/A',
+      tinNo: '',
+      supplierName: '',
+      supplierAddress: '',
       account: '',
       taxType: 'VAT',
       billable: 'No',
@@ -159,7 +159,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
         fieldErrors.dateOfReceipt = "Date of receipt is required.";
         hasError = true;
       }
-      if (!item.supplierName || !item.supplierName.trim() || item.supplierName.trim().toUpperCase() === 'N/A') {
+      if (!item.supplierName || !item.supplierName.trim()) {
         fieldErrors.supplierName = "A valid registered supplier name is required.";
         hasError = true;
       }
@@ -475,9 +475,9 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
       dateOfReceipt: new Date().toISOString().split('T')[0],
       entity: 'CCT',
       department: 'Corporate',
-      tinNo: 'N/A',
-      supplierName: 'N/A',
-      supplierAddress: 'N/A',
+      tinNo: '',
+      supplierName: '',
+      supplierAddress: '',
       account: '',
       taxType: 'VAT',
       billable: 'No',
@@ -643,7 +643,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
             <Card className="border-none shadow-2xl shadow-navy-900/5 rounded-[3rem] overflow-hidden bg-white">
               <div className="h-2 bg-emerald-500 w-full" />
               <CardHeader className="p-10">
-                <CardTitle className="text-4xl font-black text-navy-900 tracking-tighter italic">Reimbursements.</CardTitle>
+                <CardTitle className="text-4xl font-black text-navy-900 tracking-tighter italic"><span className="text-gold-500">Reimbursements.</span></CardTitle>
                 <CardDescription className="text-slate-500 font-medium max-w-sm">
                   Did you spend personal funds that need company reimbursement?
                 </CardDescription>
@@ -899,9 +899,9 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
             className="space-y-6"
           >
             <Card className="border-none shadow-2xl shadow-navy-900/5 rounded-[3rem] overflow-hidden bg-white">
-              <div className="h-2 bg-amber-500 w-full" />
+              <div className="h-2 bg-gold-500 w-full" />
               <CardHeader className="p-10">
-                <CardTitle className="text-4xl font-black text-navy-900 tracking-tighter italic">PCF Liquidation.</CardTitle>
+                <CardTitle className="text-4xl font-black text-navy-900 tracking-tighter italic"><span className="text-gold-500">PCF Liquidation.</span></CardTitle>
                 <CardDescription className="text-slate-500 font-medium max-w-sm">
                   Break down all petty cash expenses. Upload receipts for every transaction.
                 </CardDescription>
@@ -1008,7 +1008,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                                   const updated = liquidationItems.map(li => li.id === item.id ? { ...li, tinNo: e.target.value } : li);
                                   setLiquidationItems(updated);
                                 }}
-                                placeholder="e.g., 001-234-567-000 or N/A"
+                                placeholder="e.g., 001-234-567-000"
                                 className="h-12 rounded-xl bg-white border-none font-bold"
                               />
                            </div>
@@ -1057,7 +1057,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                                   const updated = liquidationItems.map(li => li.id === item.id ? { ...li, supplierAddress: e.target.value } : li);
                                   setLiquidationItems(updated);
                                 }}
-                                placeholder="Full supplier address or N/A"
+                                placeholder="Full supplier address"
                                 className="h-12 rounded-xl bg-white border-none font-bold"
                               />
                            </div>
@@ -1515,12 +1515,12 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
             className="space-y-6"
           >
             <Card className="border-none shadow-2xl shadow-navy-900/5 rounded-[3rem] overflow-hidden bg-white">
-              <div className="h-2 bg-navy-900 w-full" />
+              <div className="h-2 bg-gold-500 w-full" />
               <CardHeader className="p-10 text-center">
                  <div className="mx-auto w-20 h-20 bg-navy-900 rounded-[2rem] flex items-center justify-center text-white mb-6">
                     <BadgeCheck className="h-10 w-10" />
                  </div>
-                <CardTitle className="text-5xl font-black text-navy-900 tracking-tighter italic leading-none">Ready for <br />Submission.</CardTitle>
+                <CardTitle className="text-5xl font-black text-navy-900 tracking-tighter italic leading-none">Ready for <br /><span className="text-gold-500">Submission.</span></CardTitle>
                 <CardDescription className="text-slate-500 font-medium max-w-sm mx-auto mt-4">
                   Please review the operational statistics below before finalizing the registry entry.
                 </CardDescription>

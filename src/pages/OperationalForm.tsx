@@ -216,13 +216,13 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
       )}
 
       <Card className="border-none shadow-2xl shadow-navy-900/5 rounded-[2rem] sm:rounded-[3rem] overflow-hidden bg-white">
-        <div className="h-2 bg-navy-900 w-full" />
+        <div className="h-2 bg-gold-500 w-full" />
         <CardHeader className="p-5 sm:p-10 pb-4 sm:pb-6 text-left">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div className="space-y-1 sm:space-y-2">
               <CardTitle className="text-2xl sm:text-4xl md:text-5xl font-black text-navy-900 tracking-tighter leading-none italic">
                 Operational <br className="hidden sm:inline" />
-                Itinerary.
+                <span className="text-gold-500">Itinerary.</span>
               </CardTitle>
               <CardDescription className="text-slate-500 font-medium text-xs sm:text-sm max-w-sm">
                 Consolidated mission request system. Please fill in all operational parameters before deployment.

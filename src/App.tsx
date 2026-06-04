@@ -241,8 +241,8 @@ function Navigation() {
               <ShieldCheck className="h-6 w-6" />
             </div>
             <div className="flex flex-col -space-y-1">
-              <span className="text-xl tracking-tighter italic uppercase">
-                STLAF Ops
+              <span className="text-xl tracking-tighter italic uppercase text-navy-900 font-bold">
+                <span className="text-gold-500">STLAF</span> Ops
               </span>
               <span className="text-[9px] font-black tracking-[0.3em] text-slate-400 uppercase">
                 Mission Control v4.0
