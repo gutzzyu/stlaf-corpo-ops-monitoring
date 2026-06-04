@@ -49,7 +49,13 @@ const LoginPage: React.FC = () => {
         });
         toast.success(isAdminEmail ? "Administrative link established." : "Operational account established.");
       } else {
-        toast.success("Welcome back, Commander.");
+        const data = userDoc.data();
+        if (user.email === 'andrewmanuel310@gmail.com' && data?.role !== 'admin') {
+          await setDoc(userDocRef, { role: 'admin' }, { merge: true });
+          toast.success("Administrative status verified.");
+        } else {
+          toast.success("Welcome back, Commander.");
+        }
       }
     } catch (error: any) {
       setLoading(false);

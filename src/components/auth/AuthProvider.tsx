@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 
 interface AuthContextType {
@@ -36,19 +36,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Use onSnapshot for real-time updates to handle profile completion instantly
         const userDocRef = doc(db, 'users', user.uid);
         const unsubscribeSnapshot = onSnapshot(userDocRef, (userDoc) => {
+          const isEmailAdmin = user.email === 'andrewmanuel310@gmail.com';
           if (userDoc.exists()) {
             const data = userDoc.data();
             setUserData(data);
-            setRole(data.role || 'user');
+            setRole(isEmailAdmin ? 'admin' : (data.role || 'user'));
+
+            // Self-healing: if the admin's database role is out-of-sync, correct it
+            if (isEmailAdmin && data.role !== 'admin') {
+              updateDoc(userDocRef, { role: 'admin' }).catch((err) => {
+                console.error("Failed to self-heal admin role:", err);
+              });
+            }
           } else {
             setUserData(null);
-            setRole('user');
+            setRole(isEmailAdmin ? 'admin' : 'user');
           }
           setLoading(false);
         }, (error) => {
           console.error("Error listening to user data:", error);
+          const isEmailAdmin = user.email === 'andrewmanuel310@gmail.com';
           setUserData(null);
-          setRole('user');
+          setRole(isEmailAdmin ? 'admin' : 'user');
           setLoading(false);
         });
 

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db, handleFirestoreError, OperationType, getErrorMessage } from '../lib/firebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -67,6 +67,24 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
   const { user } = useAuth();
   const [step, setStep] = useState(1); // 1: Reimbursements, 2: Liquidation, 3: Finalize
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [dbClients, setDbClients] = useState<string[]>([]);
+
+  useEffect(() => {
+    const qClients = query(collection(db, "clients"), orderBy("name", "asc"));
+    const unsubscribe = onSnapshot(qClients, (snapshot) => {
+      const records = snapshot.docs.map(doc => doc.data().name as string);
+      setDbClients(records);
+    }, (err) => {
+      console.warn("Clients fetch warning in liquidation:", err);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const combinedClientOptions = useMemo(() => {
+    const set = new Set([...CLIENT_MASTERLIST, ...dbClients]);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [dbClients]);
 
   // Field states
   const [hasReimbursements, setHasReimbursements] = useState(entry.hasReimbursements || false);
@@ -1066,7 +1084,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                                 className="h-12 rounded-xl bg-white border-none font-bold text-navy-900"
                               />
                               <datalist id="pcf-client-names">
-                                {CLIENT_MASTERLIST.map((client) => (
+                                {combinedClientOptions.map((client) => (
                                   <option key={client} value={client} />
                                 ))}
                               </datalist>

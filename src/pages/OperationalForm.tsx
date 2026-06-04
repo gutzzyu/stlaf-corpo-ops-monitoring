@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { db, handleFirestoreError, OperationType, getErrorMessage } from '../lib/firebase';
-import { collection, addDoc, updateDoc, doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, serverTimestamp, setDoc, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -96,6 +96,24 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
 
   const watchedDestinationType = watch('destinationType');
 
+  const [dbClients, setDbClients] = useState<string[]>([]);
+
+  useEffect(() => {
+    const qClients = query(collection(db, "clients"), orderBy("name", "asc"));
+    const unsubscribe = onSnapshot(qClients, (snapshot) => {
+      const records = snapshot.docs.map(doc => doc.data().name as string);
+      setDbClients(records);
+    }, (err) => {
+      console.warn("Clients fetch warning in form:", err);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const combinedClientOptions = useMemo(() => {
+    const set = new Set([...CLIENT_MASTERLIST, ...dbClients]);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [dbClients]);
+
   useEffect(() => {
     if (!isCustomAmount) {
       if (watchedDestinationType === 'Within Metro Manila') {
@@ -111,10 +129,11 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
     setIsSubmitting(true);
     try {
       if (entry?.id) {
-        // Update existing draft
+        // Update existing draft or revision
+        const finalStatus = (entry.status === 'Needs Revision') ? 'Needs Revision' : status;
         await updateDoc(doc(db, 'operational_entries', entry.id), {
           ...values,
-          status,
+          status: finalStatus,
           updatedAt: serverTimestamp(),
         });
       } else {
@@ -332,7 +351,7 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                   }`}
                 />
                 <datalist id="section2-client-names">
-                  {CLIENT_MASTERLIST.map((client) => (
+                  {combinedClientOptions.map((client) => (
                     <option key={client} value={client} />
                   ))}
                 </datalist>

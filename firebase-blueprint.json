@@ -14,6 +14,17 @@
       },
       "required": ["uid", "email", "role"]
     },
+    "Client": {
+      "title": "Client",
+      "description": "Client profile containing identity details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name"]
+    },
     "OperationalEntry": {
       "title": "Operational Entry",
       "description": "Consolidated liaison operational record",
@@ -88,6 +99,10 @@
     "operational_entries/{entryId}": {
       "schema": "OperationalEntry",
       "description": "Main collection for all liaison operations"
+    },
+    "clients/{clientId}": {
+      "schema": "Client",
+      "description": "Dynamic clients managed by administrators"
     }
   }
 }

@@ -162,7 +162,7 @@ function Navigation() {
             }}
             onContinueEntry={(entry) => {
               setActiveEntry(entry);
-              if (entry.status === "Draft") setCurrentPage("operational-form");
+              if (entry.status === "Draft" || entry.status === "Needs Revision") setCurrentPage("operational-form");
               else setCurrentPage("liquidation-workflow");
             }}
             onViewEntry={(entry) => {
@@ -176,7 +176,13 @@ function Navigation() {
           <OperationalForm
             entry={activeEntry}
             onBack={() => setCurrentPage("dashboard")}
-            onSuccess={() => setCurrentPage("dashboard")}
+            onSuccess={() => {
+              if (activeEntry?.status === "Needs Revision") {
+                setCurrentPage("liquidation-workflow");
+              } else {
+                setCurrentPage("dashboard");
+              }
+            }}
           />
         );
       case "liquidation-workflow":

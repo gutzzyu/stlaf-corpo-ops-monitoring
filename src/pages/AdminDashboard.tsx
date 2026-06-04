@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   db,
   handleFirestoreError,
@@ -13,6 +13,7 @@ import {
   doc,
   updateDoc,
   serverTimestamp,
+  setDoc,
 } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,6 +57,8 @@ import {
   ExternalLink,
   Settings,
   AlertCircle,
+  Briefcase,
+  Plus,
 } from "lucide-react";
 import {
   Dialog,
@@ -80,6 +83,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { OperationalEntry, EntryStatus, UserProfile } from "../types";
 import SummaryView from "./SummaryView";
 import { deleteDoc } from "firebase/firestore";
+import { CLIENT_MASTERLIST } from "../lib/constants";
 
 const DEPARTMENTS = [
   "Accounting",
@@ -102,13 +106,53 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
-  const [adminTab, setAdminTab] = useState<"missions" | "personnel">(
+  const [adminTab, setAdminTab] = useState<"missions" | "personnel" | "clients">(
     "missions",
   );
   const [selectedEntry, setSelectedEntry] = useState<OperationalEntry | null>(
     null,
   );
   const [statusFilter, setStatusFilter] = useState<EntryStatus | "All">("All");
+
+  // Clients Database state
+  const [dbClients, setDbClients] = useState<{ id: string; name: string; createdAt?: any }[]>([]);
+  const [deletedSystemIds, setDeletedSystemIds] = useState<Set<string>>(new Set());
+  const [editingClient, setEditingClient] = useState<{ id: string; name: string } | null>(null);
+  const [isSavingClient, setIsSavingClient] = useState(false);
+  const [showAddClientDialog, setShowAddClientDialog] = useState(false);
+  const [newClientName, setNewClientName] = useState("");
+  const [isInitializingClients, setIsInitializingClients] = useState(false);
+
+  // Merge static CLIENT_MASTERLIST with dbClients
+  const combinedClients = useMemo(() => {
+    const standardList = CLIENT_MASTERLIST.map((name, index) => ({
+      id: `system_${index}`,
+      name,
+      isSystem: true,
+      createdAt: null as any
+    }));
+
+    // Filter out deleted standard system clients
+    const activeStandardList = standardList.filter(c => !deletedSystemIds.has(c.id));
+
+    const dbClientNames = new Set(dbClients.map(c => c.name.toLowerCase()));
+    const filteredStandard = activeStandardList.filter(c => !dbClientNames.has(c.name.toLowerCase()));
+
+    const list = [
+      ...filteredStandard,
+      ...dbClients.map(c => ({
+        id: c.id,
+        name: c.name,
+        isSystem: false,
+        createdAt: c.createdAt
+      }))
+    ];
+
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  }, [dbClients, deletedSystemIds]);
+
+  const [clientToDelete, setClientToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [userToDelete, setUserToDelete] = useState<{ uid: string; email: string; displayName?: string } | null>(null);
 
   // Revision Dialog state
   const [revisionEntryId, setRevisionEntryId] = useState<string | null>(null);
@@ -169,9 +213,40 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
       },
     );
 
+    // Clients Listener
+    const qClients = query(collection(db, "clients"), orderBy("name", "asc"));
+
+    const unsubClients = onSnapshot(
+      qClients,
+      (snapshot) => {
+        const records = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as { id: string; name: string; createdAt?: any }[];
+        setDbClients(records);
+      },
+      (error) => {
+        console.warn("Error synchronizing clients query snapshot:", error);
+      },
+    );
+
+    // Deleted System Clients Listener
+    const unsubDeletedSystem = onSnapshot(
+      collection(db, "deleted_system_clients"),
+      (snapshot) => {
+        const ids = new Set(snapshot.docs.map(doc => doc.id));
+        setDeletedSystemIds(ids);
+      },
+      (error) => {
+        console.warn("Error synchronizing deleted system clients:", error);
+      }
+    );
+
     return () => {
       unsubEntries();
       unsubUsers();
+      unsubClients();
+      unsubDeletedSystem();
     };
   }, []);
 
@@ -296,6 +371,105 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
     }
   };
 
+  const handleAddClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClientName.trim()) {
+      toast.error("Client name is required");
+      return;
+    }
+    setIsSavingClient(true);
+    const toastId = toast.loading("Adding client to database...");
+    try {
+      const clientNameClean = newClientName.trim();
+      const exists = dbClients.some(c => c.name.toLowerCase() === clientNameClean.toLowerCase());
+      if (exists) {
+        throw new Error("A client with this name already exists in the database.");
+      }
+      
+      const customId = "client_" + Math.random().toString(36).substring(2, 10);
+      await setDoc(doc(db, "clients", customId), {
+        id: customId,
+        name: clientNameClean,
+        createdAt: serverTimestamp(),
+      });
+      toast.success("Client registered successfully!", { id: toastId });
+      setShowAddClientDialog(false);
+      setNewClientName("");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to add client", { id: toastId });
+    } finally {
+      setIsSavingClient(false);
+    }
+  };
+
+  const handleEditClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingClient || !editingClient.name.trim()) {
+      toast.error("Client name is required");
+      return;
+    }
+    setIsSavingClient(true);
+    const toastId = toast.loading("Updating client name...");
+    try {
+      const cleanName = editingClient.name.trim();
+      const exists = dbClients.some(c => c.id !== editingClient.id && c.name.toLowerCase() === cleanName.toLowerCase());
+      if (exists) {
+        throw new Error("Another client with this name already exists.");
+      }
+      
+      if (editingClient.id.startsWith("system_")) {
+        // Edit System Client: Create customized document in database and delete/exclude old system client
+        const customId = "client_" + Math.random().toString(36).substring(2, 10);
+        await setDoc(doc(db, "clients", customId), {
+          id: customId,
+          name: cleanName,
+          createdAt: serverTimestamp(),
+        });
+        await setDoc(doc(db, "deleted_system_clients", editingClient.id), {
+          id: editingClient.id,
+          deletedAt: serverTimestamp(),
+        });
+      } else {
+        await updateDoc(doc(db, "clients", editingClient.id), {
+          name: cleanName,
+          updatedAt: serverTimestamp(),
+        });
+      }
+      
+      toast.success("Client updated successfully!", { id: toastId });
+      setEditingClient(null);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to edit client", { id: toastId });
+    } finally {
+      setIsSavingClient(false);
+    }
+  };
+
+  const handleDeleteClient = (client: { id: string; name: string }) => {
+    setClientToDelete(client);
+  };
+
+  const handleConfirmDeleteClient = async () => {
+    if (!clientToDelete) return;
+    const toastId = toast.loading("Purging client from registry...");
+    try {
+      if (clientToDelete.id.startsWith("system_")) {
+        // Delete System Client: Exclude it by flagging it as deleted in DB
+        await setDoc(doc(db, "deleted_system_clients", clientToDelete.id), {
+          id: clientToDelete.id,
+          deletedAt: serverTimestamp(),
+        });
+      } else {
+        await deleteDoc(doc(db, "clients", clientToDelete.id));
+      }
+      toast.success("Client purged successfully!", { id: toastId });
+    } catch (err: any) {
+      toast.error("Failed to delete client", { id: toastId });
+    } finally {
+      setClientToDelete(null);
+    }
+  };
+
   const handleUpdateUserRole = async (
     uid: string,
     newRole: "user" | "admin",
@@ -311,18 +485,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
     }
   };
 
-  const handleDeleteUser = async (uid: string) => {
-    if (
-      !window.confirm(
-        "Are you absolutely sure? This will remove the user's profile from the registry.",
-      )
-    )
-      return;
+  const handleDeleteUser = (user: { uid: string; email: string; displayName?: string }) => {
+    setUserToDelete(user);
+  };
+
+  const handleConfirmDeleteUser = async () => {
+    if (!userToDelete) return;
     try {
-      await deleteDoc(doc(db, "users", uid));
+      await deleteDoc(doc(db, "users", userToDelete.uid));
       toast.success("User removed from registry.");
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `users/${uid}`);
+      handleFirestoreError(error, OperationType.DELETE, `users/${userToDelete.uid}`);
+    } finally {
+      setUserToDelete(null);
     }
   };
 
@@ -498,11 +673,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             </div>
             <h1 className="text-5xl md:text-7xl font-black text-navy-900 tracking-tighter italic leading-none">
               Command <br />
-              {adminTab === "missions" ? "Registry." : "Personnel."}
+              {adminTab === "missions" ? "Registry." : adminTab === "personnel" ? "Personnel." : "Clients."}
             </h1>
           </div>
         </div>
-
+ 
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex bg-slate-100 p-1.5 rounded-2xl">
             <Button
@@ -520,6 +695,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             >
               <Users className="h-4 w-4" />
               Personnel
+            </Button>
+            <Button
+              variant={adminTab === "clients" ? "secondary" : "ghost"}
+              onClick={() => setAdminTab("clients")}
+              className={`h-12 px-6 rounded-xl font-bold transition-all gap-2 ${adminTab === "clients" ? "bg-white shadow-sm" : ""}`}
+            >
+              <Briefcase className="h-4 w-4" />
+              Clients
             </Button>
           </div>
 
@@ -655,6 +838,58 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
         </div>
       )}
 
+      {/* Clients Stats */}
+      {adminTab === "clients" && (
+        <div className="grid gap-6 md:grid-cols-4">
+          {[
+            {
+              label: "Total Clients",
+              value: combinedClients.length,
+              color: "text-navy-900",
+            },
+            {
+              label: "Matching Search",
+              value: combinedClients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).length,
+              color: "text-blue-500",
+            },
+            {
+              label: "New Clients (Today)",
+              value: dbClients.filter(c => {
+                if (!c.createdAt) return false;
+                try {
+                  const date = c.createdAt.toDate();
+                  const today = new Date();
+                  return date.toDateString() === today.toDateString();
+                } catch {
+                  return false;
+                }
+              }).length,
+              color: "text-emerald-500",
+            },
+            {
+              label: "Static Pre-set",
+              value: 98,
+              color: "text-purple-600",
+            },
+          ].map((stat, i) => (
+            <Card
+              key={i}
+              className="border-none bg-white shadow-sm overflow-hidden group"
+            >
+              <div className="h-1 bg-navy-900/10 group-hover:bg-navy-900 transition-colors" />
+              <CardHeader className="p-6">
+                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mb-1">
+                  {stat.label}
+                </div>
+                <div className={`text-2xl font-black font-data ${stat.color}`}>
+                  {stat.value}
+                </div>
+              </CardHeader>
+            </Card>
+          ))}
+        </div>
+      )}
+
       {/* Filters & Search */}
       <div className="flex flex-col md:flex-row gap-4">
         <div className="relative flex-1">
@@ -663,7 +898,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             placeholder={
               adminTab === "missions"
                 ? "Search missions..."
-                : "Search personnel by name, email, dept..."
+                : adminTab === "personnel"
+                ? "Search personnel by name, email, dept..."
+                : "Search client registry by name..."
             }
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -1148,7 +1385,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                               )}
                               <DropdownMenuSeparator className="bg-slate-100" />
                               <DropdownMenuItem
-                                onClick={() => handleDeleteUser(u.uid)}
+                                onClick={() => handleDeleteUser({ uid: u.uid, email: u.email, displayName: u.displayName })}
                                 className="gap-3 text-red-500 cursor-pointer rounded-xl font-bold hover:bg-red-50 transition-colors"
                               >
                                 <Trash2 className="h-4 w-4" /> Purge from
@@ -1159,6 +1396,122 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                         </TableCell>
                       </TableRow>
                     ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </motion.div>
+        )}
+
+        {adminTab === "clients" && (
+          <motion.div
+            key="clientTable"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="space-y-6 mb-20 text-left"
+          >
+            {/* Header / Actions bar */}
+            <div className="flex flex-col sm:flex-row justify-between items-center bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm gap-4">
+              <div className="space-y-1">
+                <h3 className="text-xl font-bold text-navy-900">Clients Database</h3>
+                <p className="text-xs text-slate-400 font-medium font-sans">
+                  Manage the active client masterlist selectable by officers in operational itineraries.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  onClick={() => setShowAddClientDialog(true)}
+                  className="h-12 px-6 rounded-xl font-bold bg-navy-900 hover:bg-navy-800 text-white shadow-lg shadow-navy-900/10 text-xs uppercase tracking-wider gap-2 animate-pulse-subtle"
+                >
+                  <Plus className="h-4 w-4" /> Add Client
+                </Button>
+              </div>
+            </div>
+
+            {/* Total Clients Counter */}
+            <div className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5 px-4">
+              <Briefcase className="h-3.5 w-3.5 text-navy-900" />
+              Active Clients: {combinedClients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).length} of {combinedClients.length}
+            </div>
+
+            <div className="bg-white border border-slate-100 rounded-[2.5rem] overflow-hidden shadow-xl shadow-navy-900/5">
+              <Table>
+                <TableHeader className="bg-slate-50/50">
+                  <TableRow className="hover:bg-transparent border-slate-50">
+                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400 pl-8">
+                      Client ID
+                    </TableHead>
+                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">
+                      Client / Corporate Name
+                    </TableHead>
+                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">
+                      Enrolled Date
+                    </TableHead>
+                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400 text-right pr-8">
+                      Actions
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {combinedClients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center py-20 text-xs font-black uppercase text-slate-300 tracking-widest italic animate-pulse">
+                        No clients matching search filter...
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    combinedClients
+                      .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                      .map((client) => (
+                        <TableRow key={client.id} className="hover:bg-slate-50/40 border-slate-50 transition-colors">
+                          <TableCell className="font-mono text-xs font-medium text-slate-400 pl-8">
+                            {client.id}
+                          </TableCell>
+                          <TableCell className="font-bold text-navy-950 text-sm">
+                            {client.name}
+                          </TableCell>
+                          <TableCell className="text-left font-sans">
+                            {client.isSystem ? (
+                              <Badge className="bg-slate-100 text-slate-500 border-none font-bold text-[10px] rounded-lg tracking-wider pointer-events-none">
+                                Pre-installed Standard
+                              </Badge>
+                            ) : (
+                              <span className="font-data font-bold text-navy-600 text-xs">
+                                {client.createdAt ? (
+                                  typeof client.createdAt.toDate === "function" ? (
+                                    client.createdAt.toDate().toLocaleDateString()
+                                  ) : (
+                                    new Date(client.createdAt).toLocaleDateString()
+                                  )
+                                ) : (
+                                  new Date().toLocaleDateString()
+                                )}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right pr-8">
+                            <div className="flex items-center justify-end gap-2 text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setEditingClient(client)}
+                                className="h-9 rounded-xl text-slate-400 hover:text-navy-900 hover:bg-slate-100 font-bold text-xs gap-1.5"
+                              >
+                                <UserCog className="h-4 w-4" /> Edit
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteClient(client)}
+                                className="h-9 rounded-xl text-red-500 hover:text-red-600 hover:bg-red-50 font-bold text-xs gap-1.5"
+                              >
+                                <Trash2 className="h-4 w-4" /> Delete
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
                   )}
                 </TableBody>
               </Table>
@@ -1336,6 +1689,205 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Client Dialog */}
+      <Dialog open={showAddClientDialog} onOpenChange={setShowAddClientDialog}>
+        <DialogContent className="rounded-[2.5rem] border-none bg-white p-8 max-w-md shadow-2xl">
+          <DialogHeader className="space-y-3 text-left">
+            <div className="w-12 h-12 bg-navy-900 rounded-2xl flex items-center justify-center text-white mb-2 shadow-lg shadow-navy-900/10">
+              <Briefcase className="h-6 w-6" />
+            </div>
+            <DialogTitle className="text-2xl font-black text-navy-900 italic uppercase tracking-tighter">
+              Add New Client
+            </DialogTitle>
+            <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+              Register a new operational client account
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleAddClient} className="space-y-6 my-6 text-left">
+            <div className="space-y-2">
+              <Label htmlFor="client-name" className="text-[10px] font-black uppercase tracking-[0.2em] text-navy-900">
+                Client / Company Name
+              </Label>
+              <Input
+                id="client-name"
+                value={newClientName}
+                onChange={(e) => setNewClientName(e.target.value)}
+                placeholder="Client Name or Corporate Entity"
+                className="h-12 rounded-xl bg-slate-50 border-none font-bold text-navy-950"
+                required
+              />
+            </div>
+
+            <DialogFooter className="gap-3 sm:gap-0 pt-4 border-t border-slate-100 flex flex-row justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setShowAddClientDialog(false)}
+                className="rounded-xl font-bold uppercase tracking-wider text-xs h-12 px-6"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSavingClient}
+                className="rounded-xl bg-navy-900 hover:bg-navy-800 text-white font-bold uppercase tracking-wider text-xs h-12 px-6 shadow-xl shadow-navy-900/10"
+              >
+                {isSavingClient ? "Registering..." : "Add Client"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Client Dialog */}
+      <Dialog
+        open={editingClient !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingClient(null);
+        }}
+      >
+        <DialogContent className="rounded-[2.5rem] border-none bg-white p-8 max-w-md shadow-2xl">
+          <DialogHeader className="space-y-3 text-left">
+            <div className="w-12 h-12 bg-navy-900 rounded-2xl flex items-center justify-center text-white mb-2 shadow-lg shadow-navy-900/10">
+              <Briefcase className="h-6 w-6" />
+            </div>
+            <DialogTitle className="text-2xl font-black text-navy-900 italic uppercase tracking-tighter">
+              Edit Client Registry
+            </DialogTitle>
+            <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+              Updating client name specifications
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleEditClient} className="space-y-6 my-6 text-left">
+            <div className="space-y-2">
+              <Label htmlFor="edit-client-name" className="text-[10px] font-black uppercase tracking-[0.2em] text-navy-900">
+                Client Name
+              </Label>
+              <Input
+                id="edit-client-name"
+                value={editingClient?.name || ""}
+                onChange={(e) => setEditingClient(prev => prev ? { ...prev, name: e.target.value } : null)}
+                placeholder="Client Name"
+                className="h-12 rounded-xl bg-slate-50 border-none font-bold text-navy-955"
+                required
+              />
+            </div>
+
+            <DialogFooter className="gap-3 sm:gap-0 pt-4 border-t border-slate-100 flex flex-row justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setEditingClient(null)}
+                className="rounded-xl font-bold uppercase tracking-wider text-xs h-12 px-6"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSavingClient}
+                className="rounded-xl bg-navy-900 hover:bg-navy-800 text-white font-bold uppercase tracking-wider text-xs h-12 px-6 shadow-xl shadow-navy-900/10"
+              >
+                {isSavingClient ? "Saving..." : "Save Changes"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Client Confirmation Dialog */}
+      <Dialog
+        open={clientToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setClientToDelete(null);
+        }}
+      >
+        <DialogContent className="rounded-[2.5rem] border-none bg-white p-8 max-w-md shadow-2xl">
+          <DialogHeader className="space-y-3 text-left">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mb-2 shadow-lg shadow-red-500/10">
+              <Trash2 className="h-6 w-6" />
+            </div>
+            <DialogTitle className="text-2xl font-black text-navy-900 italic uppercase tracking-tighter">
+              Delete Client?
+            </DialogTitle>
+            <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+              Confirm Client Registry Purge
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 my-6 text-left">
+            <p className="text-sm font-medium text-slate-600 leading-relaxed">
+              Are you sure you want to permanently delete the client <strong className="text-navy-950">"{clientToDelete?.name}"</strong>? This will remove them from selectors, but won&apos;t alter past itineraries.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-3 sm:gap-0 pt-4 border-t border-slate-100 flex flex-row justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setClientToDelete(null)}
+              className="rounded-xl font-bold uppercase tracking-wider text-xs h-12 px-6"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmDeleteClient}
+              className="rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-wider text-xs h-12 px-6 shadow-xl shadow-red-600/10"
+            >
+              Delete Client
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Confirmation Dialog */}
+      <Dialog
+        open={userToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setUserToDelete(null);
+        }}
+      >
+        <DialogContent className="rounded-[2.5rem] border-none bg-white p-8 max-w-md shadow-2xl">
+          <DialogHeader className="space-y-3 text-left">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mb-2 shadow-lg shadow-red-500/10">
+              <Trash2 className="h-6 w-6" />
+            </div>
+            <DialogTitle className="text-2xl font-black text-navy-900 italic uppercase tracking-tighter">
+              Remove User Profile?
+            </DialogTitle>
+            <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+              Confirm User Registration Purge
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 my-6 text-left">
+            <p className="text-sm font-medium text-slate-600 leading-relaxed">
+              Are you sure you want to remove <strong className="text-navy-950">{userToDelete?.displayName || userToDelete?.email}</strong>&apos;s profile from the registry? They will no longer be able to log in or initiate operations.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-3 sm:gap-0 pt-4 border-t border-slate-100 flex flex-row justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setUserToDelete(null)}
+              className="rounded-xl font-bold uppercase tracking-wider text-xs h-12 px-6"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmDeleteUser}
+              className="rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-wider text-xs h-12 px-6 shadow-xl shadow-red-600/10"
+            >
+              Remove User
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

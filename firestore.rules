@@ -14,11 +14,18 @@ service cloud.firestore {
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
     
-    // Admin check: strictly look up role in users collection
-    function isAdmin() { 
+    // Admin check: strictly look up role in users collection or check bootstrapped developer email
+    function isAdminByEmail() {
       return isSignedIn() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'; 
+             request.auth.token.email == 'andrewmanuel310@gmail.com';
+    }
+
+    function isAdmin() { 
+      return isSignedIn() && (
+        isAdminByEmail() ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      ); 
     }
 
     // --- User Profiles ---
@@ -30,23 +37,25 @@ service cloud.firestore {
                data.createdAt is timestamp;
       }
 
-      // Owner can read their document without needing recursive isAdmin check
-      // Admin can read any profile
-      allow read: if isSignedIn() && (request.auth.uid == userId || (request.auth.uid != userId && isAdmin()));
+      // Owner can read their document without needing recursive isAdmin check.
+      // Admin by email can read any profile.
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdminByEmail());
       
       allow create: if isSignedIn() && 
                       request.auth.uid == userId &&
                       isValidUser(incoming()) && 
-                      (incoming().role == 'user' || (incoming().role == 'admin' && incoming().email == 'andrewmanuel310@gmail.com'));
+                      (incoming().role == 'user' || (incoming().role == 'admin' && isAdminByEmail()));
                       
       allow update: if isSignedIn() && (
                       (request.auth.uid == userId && 
-                       incoming().role == existing().role && 
-                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'department', 'updatedAt'])) ||
-                      isAdmin()
+                       incoming().uid == existing().uid &&
+                       incoming().email == existing().email &&
+                       incoming().role == existing().role &&
+                       incoming().createdAt == existing().createdAt) ||
+                      isAdminByEmail()
                     );
       
-      allow delete, list: if isAdmin();
+      allow delete, list: if isSignedIn() && isAdminByEmail();
     }
 
     // --- Operational Entries ---
@@ -110,7 +119,24 @@ service cloud.firestore {
         )
       );
 
+      allow delete: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid && existing().status == 'Draft');
+    }
+
+    // --- Clients Registry ---
+    match /clients/{clientId} {
+      function isValidClient(data) {
+        return data.id is string && data.id.size() <= 128 &&
+               data.name is string && data.name.size() <= 200;
+      }
+      allow read, list: if isSignedIn();
+      allow create, update: if isAdmin() && isValidClient(incoming());
       allow delete: if isAdmin();
+    }
+
+    // --- Deleted System Clients ---
+    match /deleted_system_clients/{clientId} {
+      allow read, list: if isSignedIn();
+      allow write: if isAdmin();
     }
   }
 }
