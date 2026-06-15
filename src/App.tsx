@@ -242,10 +242,10 @@ function Navigation() {
             </div>
             <div className="flex flex-col -space-y-1">
               <span className="text-xl tracking-tighter italic uppercase text-navy-900 font-bold">
-                <span className="text-gold-500">STLAF</span> Ops
+                <span className="text-gold-500">STLAF</span> Corporate
               </span>
-              <span className="text-[9px] font-black tracking-[0.3em] text-slate-400 uppercase">
-                Mission Control v4.0
+              <span className="text-[9px] font-black tracking-wider text-slate-400 uppercase">
+                Operations Management System
               </span>
             </div>
           </div>

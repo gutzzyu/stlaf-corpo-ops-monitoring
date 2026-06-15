@@ -391,10 +391,14 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                       { id: 'Manila', label: 'Within Metro Manila', val: 'Within Metro Manila' as const },
                       { id: 'Provincial', label: 'Outside Metro Manila', val: 'Outside Metro Manila' as const }
                     ].map((opt) => (
-                      <label 
+                      <div 
                         key={opt.id} 
+                        onClick={() => {
+                          setIsCustomAmount(false);
+                          setValue('destinationType', opt.val);
+                        }}
                         className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border-2 ${
-                          watchedDestinationType === opt.val 
+                          (watchedDestinationType === opt.val && !isCustomAmount)
                             ? 'bg-navy-900 border-navy-900 text-white' 
                             : 'bg-slate-50 border-transparent text-navy-900 hover:bg-slate-100'
                         }`}
@@ -404,13 +408,30 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                               type="radio" 
                               className="hidden"
                               value={opt.val}
-                              {...register('destinationType')}
+                              checked={watchedDestinationType === opt.val && !isCustomAmount}
+                              onChange={() => {}}
                             />
                             <span className="font-black uppercase text-[10px] tracking-widest">{opt.label}</span>
                          </div>
-                         {watchedDestinationType === opt.val && <div className="w-2 h-2 rounded-full bg-white shadow-lg" />}
-                      </label>
+                         {(watchedDestinationType === opt.val && !isCustomAmount) && <div className="w-2 h-2 rounded-full bg-white shadow-lg" />}
+                      </div>
                     ))}
+
+                    <div 
+                      onClick={() => {
+                        setIsCustomAmount(true);
+                      }}
+                      className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border-2 ${
+                        isCustomAmount 
+                          ? 'bg-navy-900 border-navy-900 text-white' 
+                          : 'bg-slate-50 border-transparent text-navy-900 hover:bg-slate-100'
+                      }`}
+                    >
+                       <div className="flex items-center gap-3">
+                          <span className="font-black uppercase text-[10px] tracking-widest">Set Custom / Optional Amount</span>
+                       </div>
+                       {isCustomAmount && <div className="w-2 h-2 rounded-full bg-white shadow-lg" />}
+                    </div>
                   </div>
                 </div>
                 
@@ -434,25 +455,6 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                    <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-tighter">
                      {isCustomAmount ? "Custom Operating Fee Override" : "Automatic Service Compensation"}
                    </span>
-                   
-                   <button
-                     type="button"
-                     onClick={() => {
-                       const nextCustom = !isCustomAmount;
-                       setIsCustomAmount(nextCustom);
-                       if (!nextCustom) {
-                         // Reset back to computed default
-                         if (watchedDestinationType === 'Within Metro Manila') {
-                           setValue('outOfPocketExpense', 1000);
-                         } else {
-                           setValue('outOfPocketExpense', 1500);
-                         }
-                       }
-                     }}
-                     className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 hover:text-indigo-800 underline decoration-indigo-200 cursor-pointer pt-1 transition-colors"
-                   >
-                     {isCustomAmount ? "Use automatic standard amount" : "Set Custom / Optional Amount"}
-                   </button>
                 </div>
               </div>
             </div>

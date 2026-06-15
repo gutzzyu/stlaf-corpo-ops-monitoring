@@ -364,7 +364,7 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
                 </div>
                 <div className="space-y-4">
                   <div>
-                    <Label className="text-[10px] uppercase font-bold text-slate-400">Mission Lead</Label>
+                    <Label className="text-[10px] uppercase font-bold text-slate-400">Employee's Name</Label>
                     <p className="text-lg font-bold text-navy-900">{entry.employeeName}</p>
                     <p className="text-xs font-medium text-slate-400 italic">{entry.department}</p>
                   </div>

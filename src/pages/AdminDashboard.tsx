@@ -151,8 +151,35 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
     return list.sort((a, b) => a.name.localeCompare(b.name));
   }, [dbClients, deletedSystemIds]);
 
+  // Client pagination and memoized filtered client list states
+  const [clientPage, setClientPage] = useState(1);
+  const ITEMS_PER_PAGE = 50;
+
+  const filteredClients = useMemo(() => {
+    return combinedClients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  }, [combinedClients, searchTerm]);
+
+  const paginatedClients = useMemo(() => {
+    const startIndex = (clientPage - 1) * ITEMS_PER_PAGE;
+    return filteredClients.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredClients, clientPage]);
+
+  const totalPages = useMemo(() => {
+    return Math.ceil(filteredClients.length / ITEMS_PER_PAGE) || 1;
+  }, [filteredClients]);
+
+  useEffect(() => {
+    setClientPage(1);
+  }, [searchTerm, adminTab]);
+
   const [clientToDelete, setClientToDelete] = useState<{ id: string; name: string } | null>(null);
   const [userToDelete, setUserToDelete] = useState<{ uid: string; email: string; displayName?: string } | null>(null);
+
+  // Petty Cash Replenishment states
+  const [showArchived, setShowArchived] = useState(false);
+  const [hasExportedForReplenishment, setHasExportedForReplenishment] = useState(false);
+  const [showReplenishDialog, setShowReplenishDialog] = useState(false);
+  const [isReplenishing, setIsReplenishing] = useState(false);
 
   // Revision Dialog state
   const [revisionEntryId, setRevisionEntryId] = useState<string | null>(null);
@@ -265,36 +292,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
       // Drive Logic
       const token = localStorage.getItem("google_drive_token");
       if (newStatus === "Approved") {
-        if (!token) {
-          throw new Error(
-            "Google Drive session missing. Please log in with Google to approve and transfer files.",
-          );
-        }
         toast.loading("Transferring attachments to official Google Drive...", {
           id: toastId,
         });
-        const res = await fetch("/api/finalize-liquidation", {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ entryId: id, entryData: entry }),
-        });
-        if (!res.ok) {
-          const err = await res
-            .json()
-            .catch(() => ({ error: "Finalization failed" }));
-          if (res.status === 401 || err.error === "DRIVE_AUTH_ERROR") {
-            localStorage.removeItem("google_drive_token");
-            throw new Error(
-              "Google Drive session expired. Please refresh your connection by logging in again.",
-            );
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+        try {
+          const res = await fetch("/api/finalize-liquidation", {
+            method: "POST",
+            credentials: "include",
+            headers,
+            body: JSON.stringify({ entryId: id, entryData: entry }),
+          });
+          if (!res.ok) {
+            console.warn("Drive finalization returned non-OK. Proceeding with approval anyway.");
           }
-          throw new Error(
-            err.message || err.error || "Failed to finalize Drive files",
-          );
+        } catch (driveErr) {
+          console.warn("Drive finalization fetch failed. Proceeding with approval anyway.", driveErr);
         }
       }
 
@@ -538,7 +554,43 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
     }
   };
 
-  const filteredData = entries.filter((item) => {
+  const activeEntries = useMemo(() => {
+    return entries.filter((e) => showArchived || !e.isReplenished);
+  }, [entries, showArchived]);
+
+  const activeLiquidationValue = useMemo(() => {
+    const actualActive = entries.filter((e) => !e.isReplenished);
+    return actualActive.reduce((sum, e) => sum + (e.liquidationItems?.reduce((ss, i) => ss + i.amount, 0) || 0), 0);
+  }, [entries]);
+
+  const handleReplenishPettyCash = async () => {
+    const actualActive = entries.filter((e) => !e.isReplenished);
+    if (actualActive.length === 0) {
+      toast.warning("No active operations to replenish.");
+      return;
+    }
+    setIsReplenishing(true);
+    const toastId = toast.loading("Marking active operations as archived...");
+    try {
+      const promises = actualActive.map((e) =>
+        updateDoc(doc(db, "operational_entries", e.id), {
+          isReplenished: true,
+          replenishedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      );
+      await Promise.all(promises);
+      toast.success("Petty Cash Replenished! Active dashboard has reset to ₱0.", { id: toastId });
+      setShowReplenishDialog(false);
+      setHasExportedForReplenishment(false);
+    } catch (err: any) {
+      toast.error(`Failed to replenish: ${err.message || "Unknown error"}`, { id: toastId });
+    } finally {
+      setIsReplenishing(false);
+    }
+  };
+
+  const filteredData = activeEntries.filter((item) => {
     const matchesSearch =
       item.employeeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.destination?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -727,14 +779,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             </div>
           )}
 
-          <Button
-            variant="outline"
-            onClick={() => setShowSettings(true)}
-            className="h-14 border-slate-200 text-slate-600 rounded-2xl gap-2 font-black uppercase text-xs tracking-widest px-6"
-          >
-            <Settings className="h-5 w-5" />
-            Config
-          </Button>
+
 
           <Button
             onClick={() =>
@@ -751,28 +796,124 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
         </div>
       </div>
 
+      {/* Petty Cash Depletion Alert & Replenishment Banner */}
+      {adminTab === "missions" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 shadow-sm">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="showArchivedToggle"
+                checked={showArchived}
+                onChange={(e) => {
+                  setShowArchived(e.target.checked);
+                  if (e.target.checked) {
+                    toast.info("Showing complete backend history including past reconciled cycles.");
+                  } else {
+                    toast.info("Showing current active petty cash cycle.");
+                  }
+                }}
+                className="h-4 w-4 text-navy-900 border-slate-300 rounded focus:ring-navy-500 cursor-pointer"
+              />
+              <label htmlFor="showArchivedToggle" className="text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer select-none">
+                Include Archived / Past Reconciled Cycles
+              </label>
+            </div>
+            
+            <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+              {showArchived ? "📁 View: Complete Archive" : "⚡ View: Active Petty Cash Cycle"}
+            </div>
+          </div>
+
+          {activeLiquidationValue >= 4600 && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="p-6 md:p-8 bg-gradient-to-br from-red-50 to-orange-50 border border-red-100 rounded-[2rem] shadow-xl shadow-red-950/5 relative overflow-hidden"
+            >
+              {/* Decorative accent */}
+              <div className="absolute top-0 right-0 w-32 h-32 bg-red-100/30 rounded-full blur-2xl translate-x-10 -translate-y-10" />
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2 max-w-2xl">
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                    </span>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-red-900">
+                      Petty Cash Depletion Warning (Limit: ₱5,000)
+                    </h3>
+                  </div>
+                  
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                    Current Active Spend: <strong className="text-red-600 font-black text-sm">₱{activeLiquidationValue.toLocaleString()} / ₱5,000 ({(activeLiquidationValue / 5000 * 100).toFixed(0)}%)</strong>
+                  </p>
+                  
+                  <p className="text-xs text-slate-600 leading-relaxed max-w-xl font-medium">
+                    The active liquidation balance has crossed the critical ₱4,600 mark. The system requires safety checks to prevent data overlaps. <strong>You must first export the active report</strong> to save audit records before the replenish button becomes available.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch gap-3 w-full md:w-auto">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      exportToExcel(activeEntries, `STLAF_Pre_Replenish_Audit_${new Date().toISOString().slice(0, 10)}`);
+                      setHasExportedForReplenishment(true);
+                      toast.success("Active report exported successfully! The replenishment process is now unlocked.", { duration: 5000 });
+                    }}
+                    className={`h-14 font-black uppercase text-xs tracking-widest px-6 rounded-2xl border-red-200 text-red-800 bg-white hover:bg-red-50 gap-2 transition-all ${
+                      hasExportedForReplenishment ? "border-emerald-200 text-emerald-800 hover:bg-emerald-50 bg-emerald-50/20" : ""
+                    }`}
+                  >
+                    <Download className="h-4 w-4" />
+                    {hasExportedForReplenishment ? "✓ Exported Audit" : "1. Export Audit Data"}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={() => setShowReplenishDialog(true)}
+                    disabled={!hasExportedForReplenishment}
+                    className={`h-14 font-black uppercase text-xs tracking-widest px-6 rounded-2xl gap-2 transition-all shadow-lg ${
+                      hasExportedForReplenishment
+                        ? "bg-red-600 hover:bg-red-700 text-white shadow-xl shadow-red-600/20"
+                        : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200 shadow-none"
+                    }`}
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                    2. Replenish & Reset
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </div>
+      )}
+
       {/* Stats Board (Only for Missions) */}
       {adminTab === "missions" && (
         <div className="grid gap-6 md:grid-cols-4">
           {[
             {
               label: "Total Operations",
-              value: entries.length,
+              value: activeEntries.length,
               color: "text-navy-900",
             },
             {
               label: "Total Cash Advance",
-              value: `₱${entries.reduce((sum, e) => sum + (e.requestedCashAdvance || 0), 0).toLocaleString()}`,
+              value: `₱${activeEntries.reduce((sum, e) => sum + (e.requestedCashAdvance || 0), 0).toLocaleString()}`,
               color: "text-blue-500",
             },
             {
               label: "Total Reimbursements",
-              value: `₱${entries.reduce((sum, e) => sum + (e.reimbursements?.reduce((ss, r) => ss + r.amount, 0) || 0), 0).toLocaleString()}`,
+              value: `₱${activeEntries.reduce((sum, e) => sum + (e.reimbursements?.reduce((ss, r) => ss + r.amount, 0) || 0), 0).toLocaleString()}`,
               color: "text-indigo-600",
             },
             {
-              label: "Liquidation Value",
-              value: `₱${entries.reduce((sum, e) => sum + (e.liquidationItems?.reduce((ss, i) => ss + i.amount, 0) || 0), 0).toLocaleString()}`,
+              label: "Total Liquidation Value",
+              value: `₱${activeEntries.reduce((sum, e) => sum + (e.liquidationItems?.reduce((ss, i) => ss + i.amount, 0) || 0), 0).toLocaleString()}`,
               color: "text-emerald-600",
               isLarge: true,
             },
@@ -783,7 +924,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             >
               <div className="h-1 bg-navy-900/10 group-hover:bg-navy-900 transition-colors" />
               <CardHeader className="p-6">
-                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mb-1">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5">
                   {stat.label}
                 </div>
                 <div className={`text-2xl font-black font-data ${stat.color}`}>
@@ -826,7 +967,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             >
               <div className="h-1 bg-navy-900/10 group-hover:bg-navy-900 transition-colors" />
               <CardHeader className="p-6">
-                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mb-1">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5">
                   {stat.label}
                 </div>
                 <div className={`text-2xl font-black font-data ${stat.color}`}>
@@ -878,7 +1019,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             >
               <div className="h-1 bg-navy-900/10 group-hover:bg-navy-900 transition-colors" />
               <CardHeader className="p-6">
-                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mb-1">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5">
                   {stat.label}
                 </div>
                 <div className={`text-2xl font-black font-data ${stat.color}`}>
@@ -990,7 +1131,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
           </DialogContent>
         </Dialog>
 
-        {adminTab === "missions" ? (
+        {adminTab === "missions" && (
           viewMode === "table" ? (
             <motion.div
               key="missionTable"
@@ -1003,25 +1144,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                 <Table>
                   <TableHeader className="bg-slate-50/50">
                     <TableRow className="hover:bg-transparent border-slate-50">
-                      <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400 pl-8">
-                        Mission Lead
+                      <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900 pl-8">
+                        Employee's Name
                       </TableHead>
-                      <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">
+                      <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900">
                         Destination
                       </TableHead>
-                      <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">
+                      <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900">
                         Cash Advance
                       </TableHead>
-                      <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">
+                      <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900">
                         Reimbursement
                       </TableHead>
-                      <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">
-                        Liquidation Value
+                      <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900">
+                        Total Liquidation Value
                       </TableHead>
-                      <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">
+                      <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900">
                         Audit Status
                       </TableHead>
-                      <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400 text-right pr-8">
+                      <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900 text-right pr-8">
                         Actions
                       </TableHead>
                     </TableRow>
@@ -1243,7 +1384,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
               ))}
             </motion.div>
           )
-        ) : (
+        )}
+
+        {adminTab === "personnel" && (
           <motion.div
             key="personnelTable"
             initial={{ opacity: 0 }}
@@ -1255,22 +1398,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
               <Table>
                 <TableHeader className="bg-slate-50/50">
                   <TableRow className="hover:bg-transparent border-slate-50">
-                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400 pl-8">
+                    <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900 pl-8">
                       Identity
                     </TableHead>
-                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">
+                    <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900">
                       Department
                     </TableHead>
-                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">
+                    <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900">
                       Contact Number
                     </TableHead>
-                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">
+                    <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900">
                       Privilege
                     </TableHead>
-                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">
+                    <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900">
                       Join Date
                     </TableHead>
-                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400 text-right pr-8">
+                    <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900 text-right pr-8">
                       Management
                     </TableHead>
                   </TableRow>
@@ -1294,7 +1437,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                         <TableCell className="pl-8">
                           <div className="flex items-center gap-3 py-2">
                             <div
-                              className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${u.role === "admin" ? "bg-red-50 text-red-600 border border-red-100" : "bg-slate-100 text-navy-900"}`}
+                              className={"w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs " + (u.role === "admin" ? "bg-red-50 text-red-600 border border-red-100" : "bg-slate-100 text-navy-900")}
                             >
                               {u.displayName?.charAt(0)}
                             </div>
@@ -1432,37 +1575,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             {/* Total Clients Counter */}
             <div className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5 px-4">
               <Briefcase className="h-3.5 w-3.5 text-navy-900" />
-              Active Clients: {combinedClients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).length} of {combinedClients.length}
+              Active Clients: {filteredClients.length} of {combinedClients.length}
             </div>
 
             <div className="bg-white border border-slate-100 rounded-[2.5rem] overflow-hidden shadow-xl shadow-navy-900/5">
               <Table>
                 <TableHeader className="bg-slate-50/50">
                   <TableRow className="hover:bg-transparent border-slate-50">
-                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400 pl-8">
+                    <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900 pl-8">
                       Client ID
                     </TableHead>
-                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">
+                    <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900">
                       Client / Corporate Name
                     </TableHead>
-                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400">
+                    <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900">
                       Enrolled Date
                     </TableHead>
-                    <TableHead className="font-black text-[9px] uppercase tracking-[0.2em] h-14 text-slate-400 text-right pr-8">
+                    <TableHead className="font-black text-xs uppercase tracking-wider h-14 text-navy-900 text-right pr-8">
                       Actions
                     </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {combinedClients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
+                  {filteredClients.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={4} className="text-center py-20 text-xs font-black uppercase text-slate-300 tracking-widest italic animate-pulse">
                         No clients matching search filter...
                       </TableCell>
                     </TableRow>
                   ) : (
-                    combinedClients
-                      .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                    paginatedClients
                       .map((client) => (
                         <TableRow key={client.id} className="hover:bg-slate-50/40 border-slate-50 transition-colors">
                           <TableCell className="font-mono text-xs font-medium text-slate-400 pl-8">
@@ -1515,6 +1657,52 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                   )}
                 </TableBody>
               </Table>
+
+              {/* Client Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-8 py-6 bg-slate-50 border-t border-slate-100">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Showing <span className="font-black text-navy-900">{Math.min(filteredClients.length, (clientPage - 1) * ITEMS_PER_PAGE + 1)}-{Math.min(filteredClients.length, clientPage * ITEMS_PER_PAGE)}</span> of <span className="font-black text-navy-900">{filteredClients.length}</span> clients
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={clientPage === 1}
+                      onClick={() => setClientPage(prev => Math.max(1, prev - 1))}
+                      className="rounded-xl h-10 border-slate-200 text-slate-600 hover:text-navy-900 font-bold text-xs px-4"
+                    >
+                      Previous
+                    </Button>
+                    <div className="flex items-center gap-1.5">
+                      {Array.from({ length: totalPages }).map((_, idx) => {
+                        const pageNum = idx + 1;
+                        const isCurrent = pageNum === clientPage;
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={isCurrent ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setClientPage(pageNum)}
+                            className={`w-10 h-10 font-bold text-xs rounded-xl ${isCurrent ? 'bg-navy-900 hover:bg-navy-800 text-white shadow-md' : 'border-slate-200 text-slate-600 hover:text-navy-900'}`}
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={clientPage === totalPages}
+                      onClick={() => setClientPage(prev => Math.min(totalPages, prev + 1))}
+                      className="rounded-xl h-10 border-slate-200 text-slate-600 hover:text-navy-900 font-bold text-xs px-4"
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -1886,6 +2074,58 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
               className="rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-wider text-xs h-12 px-6 shadow-xl shadow-red-600/10"
             >
               Remove User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Replenish Petty Cash Confirmation Dialog */}
+      <Dialog
+        open={showReplenishDialog}
+        onOpenChange={(open) => {
+          if (!open && !isReplenishing) setShowReplenishDialog(false);
+        }}
+      >
+        <DialogContent className="rounded-[2.5rem] border-none bg-white p-8 max-w-md shadow-2xl">
+          <DialogHeader className="space-y-3 text-left">
+            <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mb-2 shadow-lg shadow-emerald-500/10">
+              <CheckCircle className="h-6 w-6" />
+            </div>
+            <DialogTitle className="text-2xl font-black text-navy-900 italic uppercase tracking-tighter">
+              Replenish Petty Cash?
+            </DialogTitle>
+            <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+              Confirm Reconciliation Cycle Reset
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 my-6 text-left">
+            <p className="text-sm font-medium text-slate-600 leading-relaxed">
+              Are you sure you want to replenish the petty cash fund? <br/><br/>
+              This operation will flag all <strong className="text-navy-950">{entries.filter(e => !e.isReplenished).length} active items</strong> as reconciled, resetting the active metrics dashboard and tables to <strong>₱0</strong>.<br/><br/>
+              <span className="text-xs text-amber-600 font-bold uppercase tracking-wide flex items-center gap-1.5 bg-amber-50 rounded-xl p-3 border border-amber-100">
+                ⚠️ Make sure you have downloaded the exported audit report before proceeding. Reconciled entries will be hidden from the active active-petty-cash board.
+              </span>
+            </p>
+          </div>
+
+          <DialogFooter className="gap-3 sm:gap-0 pt-4 border-t border-slate-100 flex flex-row justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={isReplenishing}
+              onClick={() => setShowReplenishDialog(false)}
+              className="rounded-xl font-bold uppercase tracking-wider text-xs h-12 px-6"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={isReplenishing}
+              onClick={handleReplenishPettyCash}
+              className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold uppercase tracking-wider text-xs h-12 px-6 shadow-xl shadow-emerald-600/10 flex items-center gap-2"
+            >
+              {isReplenishing ? "Reconciling..." : "Replenish & Reset"}
             </Button>
           </DialogFooter>
         </DialogContent>

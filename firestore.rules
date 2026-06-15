@@ -39,23 +39,23 @@ service cloud.firestore {
       }
 
       // Owner can read their document without needing recursive isAdmin check.
-      // Admin by email can read any profile.
-      allow read: if isSignedIn() && (request.auth.uid == userId || isAdminByEmail());
+      // Any admin can read any profile.
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       
       allow create: if isSignedIn() && 
                       request.auth.uid == userId &&
                       isValidUser(incoming()) && 
-                      (incoming().role == 'user' || (incoming().role == 'admin' && isAdminByEmail()));
+                      (incoming().role == 'user' || (incoming().role == 'admin' && isAdmin()));
                       
       allow update: if isSignedIn() && (
                       (request.auth.uid == userId && 
                        incoming().uid == existing().uid &&
                        incoming().email == existing().email &&
                        incoming().role == existing().role) ||
-                      isAdminByEmail()
+                      isAdmin()
                     );
       
-      allow delete, list: if isSignedIn() && isAdminByEmail();
+      allow delete, list: if isAdmin();
     }
 
     // --- Operational Entries ---
