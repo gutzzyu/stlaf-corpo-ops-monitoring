@@ -37,14 +37,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 const DEPARTMENTS = [
-  "Accounting",
+  "HR",
+  "Marketing",
+  "IT",
   "Corporate",
-  "HR & Admin",
   "Litigation",
-  "Marketing & IT",
-  "Operations",
-  "Finance",
-  "Supply Chain",
+  "Accounting",
+  "Admin",
 ];
 
 function Navigation() {
@@ -232,7 +231,7 @@ function Navigation() {
   return (
     <div className="min-h-screen bg-[#fafafa] font-sans selection:bg-navy-900 selection:text-white">
       <header className="sticky top-0 z-50 w-full border-b border-slate-100 bg-white/80 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto flex h-20 items-center justify-between px-6">
+        <div className="max-w-7xl mx-auto flex h-20 items-center justify-between px-4 sm:px-6">
           <div
             className="flex items-center gap-3 font-black text-navy-900 cursor-pointer group"
             onClick={() => setCurrentPage("dashboard")}
@@ -241,10 +240,10 @@ function Navigation() {
               <ShieldCheck className="h-6 w-6" />
             </div>
             <div className="flex flex-col -space-y-1">
-              <span className="text-xl tracking-tighter italic uppercase text-navy-900 font-bold">
+              <span className="text-base sm:text-xl tracking-tighter italic uppercase text-navy-900 font-bold">
                 <span className="text-gold-500">STLAF</span> Corporate
               </span>
-              <span className="text-[9px] font-black tracking-wider text-slate-400 uppercase">
+              <span className="text-[8px] sm:text-[9px] font-black tracking-wider text-slate-400 uppercase">
                 Operations Management System
               </span>
             </div>
@@ -403,7 +402,7 @@ function Navigation() {
         </AnimatePresence>
       </header>
 
-      <main className="max-w-7xl mx-auto py-12 px-6">
+      <main className="max-w-7xl mx-auto py-6 sm:py-12 px-4 sm:px-6">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentPage}
@@ -417,7 +416,7 @@ function Navigation() {
         </AnimatePresence>
       </main>
 
-      <footer className="max-w-7xl mx-auto py-12 px-6 border-t border-slate-50">
+      <footer className="max-w-7xl mx-auto py-8 sm:py-12 px-4 sm:px-6 border-t border-slate-50">
         <div className="flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="flex items-center gap-3">
             <ShieldCheck className="h-6 w-6 text-slate-300" />
@@ -454,9 +453,6 @@ function Navigation() {
             <DialogTitle className="text-2xl font-black text-navy-900 italic uppercase tracking-tighter">
               My Personnel Profile
             </DialogTitle>
-            <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
-              Maintain your active operational credentials
-            </DialogDescription>
           </DialogHeader>
 
           <form

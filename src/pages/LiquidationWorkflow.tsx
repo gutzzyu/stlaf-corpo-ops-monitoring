@@ -604,7 +604,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
   return (
     <div className="max-w-4xl mx-auto py-4 h-full">
       <div className="flex items-center justify-between mb-8 px-4">
-        <Button variant="ghost" size="sm" onClick={onBack} className="gap-2 text-slate-400 hover:text-navy-900 transition-colors">
+        <Button variant="outline" size="sm" onClick={onBack} className="gap-2 text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:text-navy-900 font-bold rounded-xl shadow-sm transition-all px-4 py-2 h-10">
           <ArrowLeft className="h-4 w-4" />
           Abort Liquidation
         </Button>

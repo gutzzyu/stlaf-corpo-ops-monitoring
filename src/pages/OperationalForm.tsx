@@ -84,14 +84,13 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
   const watchedDepartment = watch('department');
 
   const DEPARTMENTS = [
-    'Accounting',
+    'HR',
+    'Marketing',
+    'IT',
     'Corporate',
-    'HR & Admin',
     'Litigation',
-    'Marketing & IT',
-    'Operations',
-    'Finance',
-    'Supply Chain'
+    'Accounting',
+    'Admin'
   ];
 
   const watchedDestinationType = watch('destinationType');
@@ -185,16 +184,10 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
   return (
     <div className="max-w-4xl mx-auto py-2 sm:py-4 px-2 sm:px-4">
       <div className="flex items-center justify-between mb-6 px-2">
-        <Button variant="ghost" size="sm" onClick={onBack} className="gap-2 text-slate-400 hover:text-navy-900 transition-colors px-2 sm:px-3">
+        <Button variant="outline" size="sm" onClick={onBack} className="gap-2 text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:text-navy-900 font-bold rounded-xl shadow-sm transition-all px-3 sm:px-4 py-2 h-10">
           <ArrowLeft className="h-4 w-4" />
           <span className="text-xs sm:text-sm">Back to Dashboard</span>
         </Button>
-        <div className="flex items-center gap-1.5">
-           <div className="w-7 h-7 rounded-lg bg-navy-900 flex items-center justify-center text-white">
-              <FileText className="h-3.5 w-3.5" />
-           </div>
-           <span className="text-[9px] font-black uppercase tracking-widest text-navy-900 opacity-30">Form 01+1.2 Alpha</span>
-        </div>
       </div>
 
       {entry?.status === 'Needs Revision' && entry.adminNotes && (
@@ -224,9 +217,6 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                 Operational <br className="hidden sm:inline" />
                 <span className="text-gold-500">Itinerary.</span>
               </CardTitle>
-              <CardDescription className="text-slate-500 font-medium text-xs sm:text-sm max-w-sm">
-                Consolidated mission request system. Please fill in all operational parameters before deployment.
-              </CardDescription>
             </div>
             <div className="hidden md:block">
                <Sparkles className="h-12 w-12 text-slate-100" />
@@ -462,7 +452,7 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
             <div className="space-y-4 sm:space-y-6 pt-6 border-t-2 border-slate-50">
               <div className="flex items-center gap-2 border-b border-slate-50 pb-2">
                 <CreditCard className="h-4 w-4 text-slate-300" />
-                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-slate-400">Mission Budget Request</span>
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-slate-400">Budget Request</span>
               </div>
               <div className="space-y-4">
                 <Label className="micro-label font-bold text-emerald-700 italic">Requested Cash Advance (PHP)</Label>
@@ -517,12 +507,6 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
           </CardFooter>
         </form>
       </Card>
-      
-      <div className="mt-8 flex justify-center items-center gap-3 opacity-20 hover:opacity-100 transition-opacity">
-         <div className="h-[1px] w-8 sm:w-12 bg-navy-900" />
-         <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-[0.2em] text-navy-900">STLAF Encrypted Transmission</span>
-         <div className="h-[1px] w-8 sm:w-12 bg-navy-900" />
-      </div>
     </div>
   );
 };

@@ -254,11 +254,11 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
     <div className="max-w-4xl mx-auto py-4 px-4 sm:px-0">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div className="flex flex-wrap gap-4">
-          <Button variant="ghost" size="sm" onClick={onBack} className="gap-2 text-slate-400 hover:text-navy-900 transition-colors">
+          <Button variant="outline" size="sm" onClick={onBack} className="gap-2 text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:text-navy-900 font-bold rounded-xl shadow-sm transition-all px-4 py-2 h-10">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </Button>
-          <Button variant="outline" size="sm" onClick={handleGeneratePDF} className="gap-2 text-navy-900 border-slate-200 hover:bg-slate-50 font-bold rounded-xl whitespace-nowrap">
+          <Button variant="default" size="sm" onClick={handleGeneratePDF} className="gap-2 !bg-navy-950 !text-white hover:!bg-navy-900 font-bold rounded-xl whitespace-nowrap px-4 py-2 h-10 shadow-sm transition-all">
             <FileText className="h-4 w-4" />
             Export to PDF
           </Button>
@@ -327,9 +327,6 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
                   Operational <br />
                   <span className="text-gold-500">Registry</span> #{(entry.id || '...').slice(0, 8).toUpperCase()}
                 </CardTitle>
-                <CardDescription className="text-slate-500 font-medium">
-                  Official operational documentation for mission control.
-                </CardDescription>
               </div>
             </div>
             <div className="text-right space-y-1">
@@ -400,7 +397,7 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
           <div className="space-y-6 pt-12 border-t border-slate-50">
              <div className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-indigo-500" />
-                <span className="text-xs font-black uppercase tracking-widest text-navy-900 italic">Mission Scope</span>
+                <span className="text-xs font-black uppercase tracking-widest text-navy-900 italic">Operational Scope</span>
              </div>
              
              <div className="grid md:grid-cols-3 gap-8">
@@ -602,11 +599,7 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
           )}
         </CardContent>
 
-        <CardFooter className="p-10 pt-0 bg-slate-50/50 flex justify-between items-center text-xs font-black uppercase tracking-widest text-slate-400 border-t border-slate-50">
-           <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-              Authenticated by STLAF Cloud
-           </div>
+        <CardFooter className="p-10 pt-0 bg-slate-50/50 flex justify-end items-center text-xs font-black uppercase tracking-widest text-slate-400 border-t border-slate-50">
            <div>Ref: {entry.id}</div>
         </CardFooter>
       </Card>

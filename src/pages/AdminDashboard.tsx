@@ -86,14 +86,13 @@ import { deleteDoc } from "firebase/firestore";
 import { CLIENT_MASTERLIST } from "../lib/constants";
 
 const DEPARTMENTS = [
-  "Accounting",
+  "HR",
+  "Marketing",
+  "IT",
   "Corporate",
-  "HR & Admin",
   "Litigation",
-  "Marketing & IT",
-  "Operations",
-  "Finance",
-  "Supply Chain",
+  "Accounting",
+  "Admin",
 ];
 
 interface AdminDashboardProps {
@@ -708,10 +707,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-slate-100 pb-8">
         <div className="space-y-4">
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={onBack}
-            className="gap-2 text-slate-400 hover:text-navy-900 -ml-2 transition-all"
+            className="gap-2 text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:text-navy-900 font-bold rounded-xl shadow-sm transition-all px-4 py-2 h-10"
           >
             <ArrowLeft className="h-4 w-4" />
             Dashboard
@@ -720,7 +719,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
             <div className="flex items-center gap-2">
               <div className="h-2 w-8 bg-navy-900 rounded-full" />
               <span className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-300">
-                Admin Control Unit
+                Admin Control
               </span>
             </div>
             <h1 className="text-5xl md:text-7xl font-black text-navy-900 tracking-tighter italic leading-none">
@@ -730,30 +729,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
           </div>
         </div>
  
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex bg-slate-100 p-1.5 rounded-2xl">
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          <div className="grid grid-cols-3 md:flex w-full md:w-auto bg-slate-100 p-1 sm:p-1.5 rounded-2xl">
             <Button
               variant={adminTab === "missions" ? "secondary" : "ghost"}
               onClick={() => setAdminTab("missions")}
-              className={`h-12 px-6 rounded-xl font-bold transition-all gap-2 ${adminTab === "missions" ? "bg-white shadow-sm" : ""}`}
+              className={`h-11 md:h-12 px-2 md:px-6 rounded-xl font-bold transition-all gap-1.5 md:gap-2 text-[11px] sm:text-xs md:text-sm ${adminTab === "missions" ? "bg-white shadow-sm" : ""}`}
             >
-              <List className="h-4 w-4" />
+              <List className="h-3.5 w-3.5 md:h-4 md:w-4" />
               Missions
             </Button>
             <Button
               variant={adminTab === "personnel" ? "secondary" : "ghost"}
               onClick={() => setAdminTab("personnel")}
-              className={`h-12 px-6 rounded-xl font-bold transition-all gap-2 ${adminTab === "personnel" ? "bg-white shadow-sm" : ""}`}
+              className={`h-11 md:h-12 px-2 md:px-6 rounded-xl font-bold transition-all gap-1.5 md:gap-2 text-[11px] sm:text-xs md:text-sm ${adminTab === "personnel" ? "bg-white shadow-sm" : ""}`}
             >
-              <Users className="h-4 w-4" />
+              <Users className="h-3.5 w-3.5 md:h-4 md:w-4" />
               Personnel
             </Button>
             <Button
               variant={adminTab === "clients" ? "secondary" : "ghost"}
               onClick={() => setAdminTab("clients")}
-              className={`h-12 px-6 rounded-xl font-bold transition-all gap-2 ${adminTab === "clients" ? "bg-white shadow-sm" : ""}`}
+              className={`h-11 md:h-12 px-2 md:px-6 rounded-xl font-bold transition-all gap-1.5 md:gap-2 text-[11px] sm:text-xs md:text-sm ${adminTab === "clients" ? "bg-white shadow-sm" : ""}`}
             >
-              <Briefcase className="h-4 w-4" />
+              <Briefcase className="h-3.5 w-3.5 md:h-4 md:w-4" />
               Clients
             </Button>
           </div>
@@ -894,7 +893,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
 
       {/* Stats Board (Only for Missions) */}
       {adminTab === "missions" && (
-        <div className="grid gap-6 md:grid-cols-4">
+        <div className="grid gap-3 sm:gap-6 grid-cols-2 lg:grid-cols-4">
           {[
             {
               label: "Total Operations",
@@ -923,12 +922,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
               className="border-none bg-white shadow-sm overflow-hidden group"
             >
               <div className="h-1 bg-navy-900/10 group-hover:bg-navy-900 transition-colors" />
-              <CardHeader className="p-6">
-                <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5">
+              <CardHeader className="p-3 sm:p-6">
+                <div className="text-[9px] sm:text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">
                   {stat.label}
                 </div>
-                <div className={`text-2xl font-black font-data ${stat.color}`}>
-                  {stat.value}
+                <div className="text-sm sm:text-2xl font-black font-data truncate" title={String(stat.value)}>
+                  <span className={stat.color}>{stat.value}</span>
                 </div>
               </CardHeader>
             </Card>
@@ -938,7 +937,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
 
       {/* Personnel Stats */}
       {adminTab === "personnel" && (
-        <div className="grid gap-6 md:grid-cols-4">
+        <div className="grid gap-3 sm:gap-6 grid-cols-2 lg:grid-cols-4">
           {[
             {
               label: "Total Enrolled",
@@ -966,12 +965,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
               className="border-none bg-white shadow-sm overflow-hidden group"
             >
               <div className="h-1 bg-navy-900/10 group-hover:bg-navy-900 transition-colors" />
-              <CardHeader className="p-6">
-                <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5">
+              <CardHeader className="p-3 sm:p-6">
+                <div className="text-[9px] sm:text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">
                   {stat.label}
                 </div>
-                <div className={`text-2xl font-black font-data ${stat.color}`}>
-                  {stat.value}
+                <div className="text-sm sm:text-2xl font-black font-data truncate" title={String(stat.value)}>
+                  <span className={stat.color}>{stat.value}</span>
                 </div>
               </CardHeader>
             </Card>
@@ -981,7 +980,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
 
       {/* Clients Stats */}
       {adminTab === "clients" && (
-        <div className="grid gap-6 md:grid-cols-4">
+        <div className="grid gap-3 sm:gap-6 grid-cols-2 lg:grid-cols-4">
           {[
             {
               label: "Total Clients",
@@ -1018,12 +1017,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
               className="border-none bg-white shadow-sm overflow-hidden group"
             >
               <div className="h-1 bg-navy-900/10 group-hover:bg-navy-900 transition-colors" />
-              <CardHeader className="p-6">
-                <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5">
+              <CardHeader className="p-3 sm:p-6">
+                <div className="text-[9px] sm:text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">
                   {stat.label}
                 </div>
-                <div className={`text-2xl font-black font-data ${stat.color}`}>
-                  {stat.value}
+                <div className="text-sm sm:text-2xl font-black font-data truncate" title={String(stat.value)}>
+                  <span className={stat.color}>{stat.value}</span>
                 </div>
               </CardHeader>
             </Card>

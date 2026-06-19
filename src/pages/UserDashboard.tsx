@@ -96,21 +96,21 @@ const UserDashboard: React.FC<Props> = ({ onNewEntry, onContinueEntry, onViewEnt
   }
 
   return (
-    <div className="space-y-8 pb-20 px-4">
+    <div className="space-y-6 sm:space-y-8 pb-20">
       {/* Drive Connection Status */}
       {!localStorage.getItem('google_drive_token') && (
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-red-50 border border-red-100 rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between gap-4"
+          className="bg-red-50 border border-red-100 rounded-[2rem] p-5 sm:p-6 flex flex-col md:flex-row items-center justify-between gap-4"
         >
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600">
+          <div className="flex items-center gap-4 w-full md:w-auto">
+            <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 shrink-0">
                <AlertCircle className="h-6 w-6" />
             </div>
             <div>
-               <h3 className="text-red-900 font-bold">Google Drive Disconnected</h3>
-               <p className="text-red-700 text-xs font-medium">Files cannot be uploaded until you re-authenticate with Google Drive access.</p>
+               <h3 className="text-red-900 font-bold text-sm sm:text-base">Google Drive Disconnected</h3>
+               <p className="text-red-700 text-[11px] sm:text-xs font-medium">Files cannot be uploaded until you re-authenticate with Google Drive access.</p>
             </div>
           </div>
           <Button 
@@ -118,30 +118,30 @@ const UserDashboard: React.FC<Props> = ({ onNewEntry, onContinueEntry, onViewEnt
             onClick={() => {
               import('../lib/firebase').then(({ auth }) => auth.signOut());
             }}
-            className="rounded-xl h-12 px-6 font-black uppercase text-[10px] tracking-widest"
+            className="rounded-xl h-11 sm:h-12 w-full md:w-auto px-6 font-black uppercase text-[10px] tracking-widest text-center"
           >
             Log Out to Reconnect
           </Button>
         </motion.div>
       )}
       
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-5">
         <div className="space-y-1">
-          <div className="flex items-center gap-2 text-navy-900 mb-2">
+          <div className="flex items-center gap-2 text-navy-900 mb-1.5">
             <LayoutDashboard className="h-5 w-5" />
-            <span className="text-xs font-black uppercase tracking-widest italic opacity-50">Operational Nexus</span>
+            <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest italic opacity-50">Officer Workspace</span>
           </div>
-          <h1 className="text-4xl md:text-6xl font-black text-navy-900 tracking-tighter leading-none italic">
-            Officer <br />
+          <h1 className="text-3xl sm:text-4xl md:text-6xl font-black text-navy-900 tracking-tighter leading-none italic">
+            Officer <br className="hidden sm:inline" />
             <span className="text-gold-500">Dashboard.</span>
           </h1>
         </div>
         <Button 
           onClick={onNewEntry}
-          className="h-16 px-8 rounded-2xl bg-gold-500 hover:bg-gold-600 text-white text-lg font-black gap-2 transition-all hover:gap-4 shadow-xl shadow-gold-500/20 group overflow-hidden"
+          className="h-14 sm:h-16 px-6 sm:px-8 rounded-xl sm:rounded-2xl bg-gold-500 hover:bg-gold-600 text-white text-base sm:text-lg font-gold font-black gap-2 transition-all hover:gap-4 shadow-xl shadow-gold-500/20 group overflow-hidden w-full md:w-auto"
         >
           New Operation
-          <Plus className="h-6 w-6 group-hover:rotate-90 transition-transform" />
+          <Plus className="h-5 w-5 sm:h-6 sm:w-6 group-hover:rotate-90 transition-transform" />
         </Button>
       </div>
 
@@ -149,7 +149,7 @@ const UserDashboard: React.FC<Props> = ({ onNewEntry, onContinueEntry, onViewEnt
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
         <Input 
           placeholder="Filter operational registry..." 
-          className="h-14 pl-12 rounded-2xl border-slate-100 bg-white/50 backdrop-blur-sm focus:bg-white transition-all text-lg font-medium shadow-sm"
+          className="h-12 sm:h-14 pl-12 rounded-xl sm:rounded-2xl border-slate-100 bg-white/50 backdrop-blur-sm focus:bg-white transition-all text-sm sm:text-lg font-medium shadow-sm"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />

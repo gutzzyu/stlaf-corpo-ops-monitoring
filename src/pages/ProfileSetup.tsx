@@ -12,14 +12,13 @@ import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
 const DEPARTMENTS = [
-  'Accounting',
+  'HR',
+  'Marketing',
+  'IT',
   'Corporate',
-  'HR & Admin',
   'Litigation',
-  'Marketing & IT',
-  'Operations',
-  'Finance',
-  'Supply Chain'
+  'Accounting',
+  'Admin'
 ];
 
 const ProfileSetup: React.FC = () => {
