@@ -44,6 +44,30 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
   const [revisionNotes, setRevisionNotes] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
 
+  const [outOfPocketExpense, setOutOfPocketExpense] = React.useState(entry.outOfPocketExpense || 0);
+  const [isSavingExpense, setIsSavingExpense] = React.useState(false);
+
+  React.useEffect(() => {
+    setOutOfPocketExpense(entry.outOfPocketExpense || 0);
+  }, [entry.outOfPocketExpense]);
+
+  const handleSaveExpense = async () => {
+    setIsSavingExpense(true);
+    const toastId = toast.loading("Updating Operating Fee...");
+    try {
+      await updateDoc(doc(db, 'operational_entries', entry.id!), {
+        outOfPocketExpense: outOfPocketExpense,
+        updatedAt: serverTimestamp()
+      });
+      toast.success("Operating Fee successfully updated!", { id: toastId });
+    } catch (error: any) {
+      toast.error(`Update failed: ${getErrorMessage(error)}`, { id: toastId });
+      handleFirestoreError(error, OperationType.UPDATE, `operational_entries/${entry.id}`);
+    } finally {
+      setIsSavingExpense(false);
+    }
+  };
+
   const handleUpdateStatus = async (newStatus: string, notes: string = '') => {
     setIsLoading(true);
     const toastId = toast.loading(`Marking entry as ${newStatus}...`);
@@ -432,13 +456,44 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
                    )}
                 </div>
 
-                <div className="p-8 bg-indigo-50/50 rounded-[2.5rem] border-2 border-indigo-100 flex flex-col items-center justify-center text-center space-y-2">
-                   <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Operating Fee</span>
-                   <div className="text-3xl font-black font-data text-indigo-900">
-                      ₱{entry.outOfPocketExpense?.toLocaleString()}
+                {isAdmin ? (
+                   <div className="p-8 bg-indigo-50/50 rounded-[2.5rem] border-2 border-indigo-100 flex flex-col items-center justify-center text-center space-y-3">
+                      <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Operating Fee (Admin Only)</span>
+                      <div className="relative w-full max-w-[180px]">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-indigo-900 text-sm">₱</span>
+                        <input
+                          type="number"
+                          value={outOfPocketExpense}
+                          onChange={(e) => setOutOfPocketExpense(parseFloat(e.target.value) || 0)}
+                          className="w-full h-10 pl-7 pr-3 text-center rounded-xl bg-white border border-indigo-200 text-lg font-bold font-data text-indigo-900 shadow-sm focus:border-indigo-400 focus:outline-none"
+                          placeholder="0"
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        disabled={isSavingExpense || outOfPocketExpense === entry.outOfPocketExpense}
+                        onClick={handleSaveExpense}
+                        className="bg-indigo-600 hover:bg-indigo-700 font-bold rounded-xl text-white text-xs px-4 h-8 min-h-[2rem]"
+                      >
+                        {isSavingExpense ? "Saving..." : "Save Fee"}
+                      </Button>
+                      <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-tighter">Liaison Service Comp</span>
                    </div>
-                   <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-tighter">Liaison Service Comp</span>
-                </div>
+                ) : (
+                   <div className="p-8 bg-indigo-50/50 rounded-[2.5rem] border-2 border-indigo-100 flex flex-col items-center justify-center text-center space-y-2">
+                      <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Operating Fee</span>
+                      {entry.outOfPocketExpense && entry.outOfPocketExpense > 0 ? (
+                        <div className="text-3xl font-black font-data text-indigo-900">
+                           ₱{entry.outOfPocketExpense?.toLocaleString()}
+                        </div>
+                      ) : (
+                        <div className="text-sm font-black text-indigo-900 italic py-2">
+                           Pending Admin Assessment
+                        </div>
+                      )}
+                      <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-tighter">Liaison Service Comp</span>
+                   </div>
+                )}
              </div>
           </div>
 

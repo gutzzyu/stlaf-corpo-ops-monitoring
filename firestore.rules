@@ -69,7 +69,7 @@ service cloud.firestore {
                data.purpose is string && data.purpose.size() <= 1000 &&
                data.scheduleDate is string && data.scheduleDate.size() <= 50 &&
                data.accountName is string && data.accountName.size() <= 200 &&
-               data.companyName is string && data.companyName.size() <= 200 &&
+               (!('companyName' in data) || (data.companyName is string && data.companyName.size() <= 200)) &&
                (!('contactPerson' in data) || data.contactPerson is string) &&
                data.destinationType in ['Within Metro Manila', 'Outside Metro Manila'] &&
                data.outOfPocketExpense is number &&

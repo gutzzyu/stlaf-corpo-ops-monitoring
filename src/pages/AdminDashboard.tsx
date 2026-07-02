@@ -85,7 +85,6 @@ import { toast } from "sonner";
 import { motion, AnimatePresence } from "motion/react";
 import { OperationalEntry, EntryStatus, UserProfile } from "../types";
 import SummaryView from "./SummaryView";
-import { deleteDoc } from "firebase/firestore";
 import { CLIENT_MASTERLIST } from "../lib/constants";
 
 const DEPARTMENTS = [
@@ -191,40 +190,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   const [saEmail, setSaEmail] = useState("");
 
   useEffect(() => {
-    const runProdReset = async () => {
-      try {
-        const checkResetMarker = localStorage.getItem("temp_db_reset_done_2026_q2");
-        if (checkResetMarker === "true") return;
-
-        console.log("Triggering client-side secure production Database Reset...");
-        const collections = ["operational_entries", "clients", "deleted_system_clients"];
-        
-        for (const col of collections) {
-          const snapshot = await getDocs(collection(db, col));
-          console.log(`Resetting ${col}: found ${snapshot.size} docs.`);
-          for (const d of snapshot.docs) {
-            await deleteDoc(d.ref);
-          }
-        }
-        
-        // Handle users collection (safeguard current log-in user from self-deletion if info is loaded)
-        // Note: Admin can recreate roles on login, but let's preserve them to avoid kicking themselves out
-        const usersSnapshot = await getDocs(collection(db, "users"));
-        console.log(`Resetting users: found ${usersSnapshot.size} docs.`);
-        for (const d of usersSnapshot.docs) {
-          if (d.id !== auth.currentUser?.uid) {
-            await deleteDoc(d.ref);
-          }
-        }
-
-        localStorage.setItem("temp_db_reset_done_2026_q2", "true");
-        toast.success("Database master reset completed nicely! Clear database ready for production.");
-      } catch (e: any) {
-        console.error("Purge error:", e.message || e);
-      }
-    };
-    runProdReset();
-
     fetch("/api/service-account", { credentials: "include" })
       .then(async (r) => {
         const text = await r.text();

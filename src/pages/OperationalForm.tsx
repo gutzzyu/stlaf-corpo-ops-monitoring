@@ -52,7 +52,7 @@ interface Props {
 }
 
 const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
-  const { user, userData } = useAuth();
+  const { user, userData, isAdmin } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCustomAmount, setIsCustomAmount] = useState(() => {
     if (!entry) return false;
@@ -66,7 +66,7 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
     defaultValues: {
       employeeName: entry?.employeeName || userData?.displayName || user?.displayName || '',
       department: entry?.department || userData?.department || '',
-      contactNumber: entry?.contactNumber || '',
+      contactNumber: entry?.contactNumber || userData?.contactNumber || '',
       destination: entry?.destination || '',
       purpose: entry?.purpose || '',
       scheduleDate: entry?.scheduleDate || new Date().toISOString().split('T')[0],
@@ -74,7 +74,7 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
       companyName: entry?.companyName || '',
       contactPerson: entry?.contactPerson || '',
       destinationType: entry?.destinationType || 'Within Metro Manila',
-      outOfPocketExpense: entry?.outOfPocketExpense || 1000,
+      outOfPocketExpense: entry?.outOfPocketExpense || (isAdmin ? 1000 : 0),
       requestedCashAdvance: entry?.requestedCashAdvance || 0,
       cashAdvancePurpose: entry?.cashAdvancePurpose || '',
       remarks: entry?.remarks || '',
@@ -114,6 +114,10 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
   }, [dbClients]);
 
   useEffect(() => {
+    if (!isAdmin) {
+      setValue('outOfPocketExpense', entry?.outOfPocketExpense || 0);
+      return;
+    }
     if (!isCustomAmount) {
       if (watchedDestinationType === 'Within Metro Manila') {
         setValue('outOfPocketExpense', 1000);
@@ -121,7 +125,7 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
         setValue('outOfPocketExpense', 1500);
       }
     }
-  }, [watchedDestinationType, setValue, isCustomAmount]);
+  }, [watchedDestinationType, setValue, isCustomAmount, isAdmin, entry]);
 
   const saveEntry = async (values: z.infer<typeof formSchema>, status: EntryStatus) => {
     if (!user) return;
@@ -365,89 +369,89 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                 </datalist>
                 {renderFieldError('accountName', 'Select a client masterlist option or input the corporate billable account.')}
               </div>
-            </div>
+                        {/* SECTION 3 — Out-of-Pocket Expense */}
+            {isAdmin && (
+              <div className="space-y-4 sm:space-y-6">
+                <div className="flex items-center gap-2 border-b border-slate-50 pb-2">
+                   <MapPin className="h-4 w-4 text-slate-300" />
+                   <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-slate-400">SECTION 3 — Out-of-Pocket Expense</span>
+                </div>
+                <div className="grid gap-6 sm:grid-gap-8 md:grid-cols-2 items-center">
+                  <div className="space-y-3 sm:space-y-4">
+                    <Label className="micro-label">Destination Type</Label>
+                    <div className="flex flex-col gap-3">
+                      {[
+                        { id: 'Manila', label: 'Within Metro Manila', val: 'Within Metro Manila' as const },
+                        { id: 'Provincial', label: 'Outside Metro Manila', val: 'Outside Metro Manila' as const }
+                      ].map((opt) => (
+                        <div 
+                          key={opt.id} 
+                          onClick={() => {
+                            setIsCustomAmount(false);
+                            setValue('destinationType', opt.val);
+                          }}
+                          className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border-2 ${
+                            (watchedDestinationType === opt.val && !isCustomAmount)
+                              ? 'bg-navy-900 border-navy-900 text-white' 
+                              : 'bg-slate-50 border-transparent text-navy-900 hover:bg-slate-100'
+                          }`}
+                        >
+                           <div className="flex items-center gap-3">
+                              <input 
+                                type="radio" 
+                                className="hidden"
+                                value={opt.val}
+                                checked={watchedDestinationType === opt.val && !isCustomAmount}
+                                onChange={() => {}}
+                              />
+                              <span className="font-black uppercase text-[10px] tracking-widest">{opt.label}</span>
+                           </div>
+                           {(watchedDestinationType === opt.val && !isCustomAmount) && <div className="w-2 h-2 rounded-full bg-white shadow-lg" />}
+                        </div>
+                      ))}
 
-            {/* SECTION 3 — Out-of-Pocket Expense */}
-            <div className="space-y-4 sm:space-y-6">
-              <div className="flex items-center gap-2 border-b border-slate-50 pb-2">
-                <MapPin className="h-4 w-4 text-slate-300" />
-                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-slate-400">SECTION 3 — Out-of-Pocket Expense</span>
-              </div>
-              <div className="grid gap-6 sm:grid-gap-8 md:grid-cols-2 items-center">
-                <div className="space-y-3 sm:space-y-4">
-                  <Label className="micro-label">Destination Type</Label>
-                  <div className="flex flex-col gap-3">
-                    {[
-                      { id: 'Manila', label: 'Within Metro Manila', val: 'Within Metro Manila' as const },
-                      { id: 'Provincial', label: 'Outside Metro Manila', val: 'Outside Metro Manila' as const }
-                    ].map((opt) => (
                       <div 
-                        key={opt.id} 
                         onClick={() => {
-                          setIsCustomAmount(false);
-                          setValue('destinationType', opt.val);
+                          setIsCustomAmount(true);
                         }}
                         className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border-2 ${
-                          (watchedDestinationType === opt.val && !isCustomAmount)
+                          isCustomAmount 
                             ? 'bg-navy-900 border-navy-900 text-white' 
                             : 'bg-slate-50 border-transparent text-navy-900 hover:bg-slate-100'
                         }`}
                       >
                          <div className="flex items-center gap-3">
-                            <input 
-                              type="radio" 
-                              className="hidden"
-                              value={opt.val}
-                              checked={watchedDestinationType === opt.val && !isCustomAmount}
-                              onChange={() => {}}
-                            />
-                            <span className="font-black uppercase text-[10px] tracking-widest">{opt.label}</span>
+                            <span className="font-black uppercase text-[10px] tracking-widest">Set Custom / Optional Amount</span>
                          </div>
-                         {(watchedDestinationType === opt.val && !isCustomAmount) && <div className="w-2 h-2 rounded-full bg-white shadow-lg" />}
+                         {isCustomAmount && <div className="w-2 h-2 rounded-full bg-white shadow-lg" />}
                       </div>
-                    ))}
-
-                    <div 
-                      onClick={() => {
-                        setIsCustomAmount(true);
-                      }}
-                      className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border-2 ${
-                        isCustomAmount 
-                          ? 'bg-navy-900 border-navy-900 text-white' 
-                          : 'bg-slate-50 border-transparent text-navy-900 hover:bg-slate-100'
-                      }`}
-                    >
-                       <div className="flex items-center gap-3">
-                          <span className="font-black uppercase text-[10px] tracking-widest">Set Custom / Optional Amount</span>
-                       </div>
-                       {isCustomAmount && <div className="w-2 h-2 rounded-full bg-white shadow-lg" />}
                     </div>
                   </div>
-                </div>
-                
-                <div className="p-6 sm:p-8 rounded-[1.5rem] sm:rounded-[2rem] bg-indigo-50/50 border-2 border-indigo-100 flex flex-col items-center justify-center text-center space-y-3">
-                   <span className="text-[9px] sm:text-[10px] font-black text-indigo-400 uppercase tracking-widest">Computed Operating Fee</span>
-                   {!isCustomAmount ? (
-                     <div className="text-3xl sm:text-4xl font-black font-data text-indigo-900">
-                        ₱{watch('outOfPocketExpense')?.toLocaleString()}
-                     </div>
-                   ) : (
-                     <div className="relative w-full max-w-[200px]">
-                       <span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-indigo-900 text-lg">₱</span>
-                       <Input
-                         type="number"
-                         {...register('outOfPocketExpense', { valueAsNumber: true })}
-                         className="h-12 pl-8 pr-3 text-center rounded-xl bg-white border border-indigo-200 text-xl font-bold font-data text-indigo-900 shadow-sm focus:border-indigo-400"
-                         placeholder="Custom Amount"
-                       />
-                     </div>
-                   )}
-                   <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-tighter">
-                     {isCustomAmount ? "Custom Operating Fee Override" : "Automatic Service Compensation"}
-                   </span>
+                  
+                  <div className="p-6 sm:p-8 rounded-[1.5rem] sm:rounded-[2rem] bg-indigo-50/50 border-2 border-indigo-100 flex flex-col items-center justify-center text-center space-y-3">
+                     <span className="text-[9px] sm:text-[10px] font-black text-indigo-400 uppercase tracking-widest">Computed Operating Fee</span>
+                     {!isCustomAmount ? (
+                       <div className="text-3xl sm:text-4xl font-black font-data text-indigo-900">
+                          ₱{watch('outOfPocketExpense')?.toLocaleString()}
+                       </div>
+                     ) : (
+                       <div className="relative w-full max-w-[200px]">
+                         <span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-indigo-900 text-lg">₱</span>
+                         <Input
+                           type="number"
+                           {...register('outOfPocketExpense', { valueAsNumber: true })}
+                           className="h-12 pl-8 pr-3 text-center rounded-xl bg-white border border-indigo-200 text-xl font-bold font-data text-indigo-900 shadow-sm focus:border-indigo-400"
+                           placeholder="Custom Amount"
+                         />
+                       </div>
+                     )}
+                     <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-tighter">
+                       {isCustomAmount ? "Custom Operating Fee Override" : "Automatic Service Compensation"}
+                     </span>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}          </div>
 
             <div className="space-y-4 sm:space-y-6 pt-6 border-t-2 border-slate-50">
               <div className="flex items-center gap-2 border-b border-slate-50 pb-2">
