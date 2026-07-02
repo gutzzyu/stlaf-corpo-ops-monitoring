@@ -7,11 +7,12 @@ export interface UploadMetadata {
   isPending?: boolean;
 }
 
-export async function uploadDirectToDrive(file: File, category: string, driveToken: string, userName: string) {
+export async function uploadDirectToDrive(file: File, category: string, driveToken: string, userName?: string) {
   const formatDriveFileName = (origName: string, uName: string, cat: string) => {
     const dateStr = new Date().toISOString().split('T')[0];
-    const nameParts = uName.trim().split(' ');
-    const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : uName;
+    const finalUName = uName || 'User';
+    const nameParts = finalUName.trim().split(' ');
+    const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : finalUName;
     const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join('_') : '';
     
     const sanitizedLastName = lastName.replace(/[^a-zA-Z0-9]/g, "");
@@ -24,7 +25,7 @@ export async function uploadDirectToDrive(file: File, category: string, driveTok
     return `${dateStr}_${sanitizedLastName}_${sanitizedFirstName}_${docType}_${timestamp.toString().slice(-4)}${extension}`;
   };
 
-  const newFileName = formatDriveFileName(file.name, userName, category);
+  const newFileName = formatDriveFileName(file.name, userName || 'User', category);
 
   const getOrCreateSTLAFFolder = async (token: string): Promise<string> => {
     try {
@@ -163,7 +164,7 @@ export async function uploadToDrive(file: File, metadata: UploadMetadata) {
       body: formData,
     });
   } catch (error: any) {
-    if (error.name === 'TypeError' || error.message?.includes("Failed to fetch") || error.message?.includes("Cookie check") || error.message?.includes("cookies")) {
+    if (error.name === 'TypeError' || error.message?.toLowerCase().includes("failed to fetch") || error.message?.toLowerCase().includes("cookie check") || error.message?.toLowerCase().includes("cookies")) {
       console.warn("Proxy block detected on fetch catch, falling back to direct client-side Google Drive API upload...");
       return uploadDirectToDrive(file, metadata.category, token, metadata.userName);
     }
@@ -179,7 +180,8 @@ export async function uploadToDrive(file: File, metadata: UploadMetadata) {
     } else {
       const text = await response.text();
       console.error('Server returned non-JSON error:', text);
-      if (text.includes('Cookie check') || text.includes('Action required') || response.status === 403 || response.status === 302) {
+      const lowerText = text.toLowerCase();
+      if (lowerText.includes('cookie check') || lowerText.includes('action required') || response.status === 403 || response.status === 302) {
         console.warn("Proxy block detected on non-ok response, falling back to direct client-side Google Drive API upload...");
         return uploadDirectToDrive(file, metadata.category, token, metadata.userName);
       }
@@ -203,7 +205,8 @@ export async function uploadToDrive(file: File, metadata: UploadMetadata) {
         fileName: string;
       };
     } catch (e) {
-      if (textBody.includes("Cookie check") || textBody.includes("Action required")) {
+      const lowerText = textBody.toLowerCase();
+      if (lowerText.includes("cookie check") || lowerText.includes("action required")) {
         console.warn("Proxy text block detected, falling back to direct client-side Google Drive API upload...");
         return uploadDirectToDrive(file, metadata.category, token, metadata.userName);
       }

@@ -141,7 +141,7 @@ const ProfileSetup: React.FC = () => {
                   <Building2 className="h-3 w-3" /> Department
                 </Label>
                 <Select 
-                  value={department} 
+                  value={department || ""} 
                   onValueChange={(val) => {
                     setDepartment(val);
                     if (errors.department) setErrors(prev => ({ ...prev, department: undefined }));

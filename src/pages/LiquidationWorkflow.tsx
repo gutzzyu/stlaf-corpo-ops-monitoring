@@ -88,25 +88,65 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
 
   // Field states
   const [hasReimbursements, setHasReimbursements] = useState(entry.hasReimbursements || false);
-  const [reimbursements, setReimbursements] = useState<(ReimbursementEntry & { pendingFile?: File })[]>(entry.reimbursements || []);
-  const [liquidationItems, setLiquidationItems] = useState<(LiquidationItem & { pendingFile?: File })[]>(entry.liquidationItems || [
-    { 
-      id: Math.random().toString(36).substr(2, 9), 
-      dateOfReceipt: new Date().toISOString().split('T')[0],
-      entity: 'CCT',
-      department: 'Corporate',
-      tinNo: '',
-      supplierName: '',
-      supplierAddress: '',
-      account: '',
-      taxType: 'VAT',
-      billable: 'No',
-      clientName: '',
-      description: '',
-      amount: 0 
+  const [reimbursements, setReimbursements] = useState<(ReimbursementEntry & { pendingFile?: File })[]>(() => {
+    if (entry.reimbursements && entry.reimbursements.length > 0) {
+      return entry.reimbursements.map(r => ({
+        ...r,
+        purpose: r.purpose || '',
+        amount: r.amount || 0,
+        driveUrl: r.driveUrl || '',
+        tempUrl: r.tempUrl || ''
+      }));
     }
-  ]);
-  const [proofSlips, setProofSlips] = useState<(ProofSlip & { pendingFile?: File })[]>(entry.proofSlips || []);
+    return [];
+  });
+  const [liquidationItems, setLiquidationItems] = useState<(LiquidationItem & { pendingFile?: File })[]>(() => {
+    if (entry.liquidationItems && entry.liquidationItems.length > 0) {
+      return entry.liquidationItems.map(item => ({
+        ...item,
+        entity: item.entity || 'CCT',
+        department: item.department || 'Corporate',
+        tinNo: item.tinNo || '',
+        supplierName: item.supplierName || '',
+        supplierAddress: item.supplierAddress || '',
+        account: item.account || '',
+        taxType: item.taxType || 'VAT',
+        billable: item.billable || 'No',
+        clientName: item.clientName || '',
+        description: item.description || '',
+        amount: item.amount || 0
+      }));
+    }
+    return [
+      { 
+        id: Math.random().toString(36).substr(2, 9), 
+        dateOfReceipt: new Date().toISOString().split('T')[0],
+        entity: 'CCT',
+        department: 'Corporate',
+        tinNo: '',
+        supplierName: '',
+        supplierAddress: '',
+        account: '',
+        taxType: 'VAT',
+        billable: 'No',
+        clientName: '',
+        description: '',
+        amount: 0 
+      }
+    ];
+  });
+  const [proofSlips, setProofSlips] = useState<(ProofSlip & { pendingFile?: File })[]>(() => {
+    if (entry.proofSlips && entry.proofSlips.length > 0) {
+      return entry.proofSlips.map(p => ({
+        ...p,
+        slipName: p.slipName || '',
+        amount: p.amount || 0,
+        driveUrl: p.driveUrl || '',
+        tempUrl: p.tempUrl || ''
+      }));
+    }
+    return [];
+  });
   const [stepOneErrors, setStepOneErrors] = useState<Record<string, { purpose?: string; amount?: string; attachment?: string }>>({});
   const [stepTwoErrors, setStepTwoErrors] = useState<Record<string, { dateOfReceipt?: string; supplierName?: string; account?: string; amount?: string; attachment?: string }>>({});
 
@@ -195,11 +235,21 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
 
   const isDriveUrl = (url: string) => url.includes('drive.google.com');
 
+  const getDriveFileId = (url: string) => {
+    const match = url.match(/\/d\/([^\/]+)/) || url.match(/id=([^&]+)/);
+    return match ? match[1] : null;
+  };
+
+  const isImageFile = (name: string) => {
+    const ext = name.toLowerCase().split('.').pop() || '';
+    return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext);
+  };
+
   const getEmbedUrl = (url: string) => {
     if (isDriveUrl(url)) {
-      const match = url.match(/\/d\/([^\/]+)/) || url.match(/id=([^&]+)/);
-      if (match && match[1]) {
-        return `https://drive.google.com/file/d/${match[1]}/preview`;
+      const fileId = getDriveFileId(url);
+      if (fileId) {
+        return `https://drive.google.com/file/d/${fileId}/preview`;
       }
     }
     return url;
@@ -379,7 +429,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
         const contentType = response.headers.get("content-type");
         const bodyText = await response.text();
         
-        if (bodyText.includes("Cookie check") || bodyText.includes("Action required") || response.status === 403 || response.status === 302) {
+        if (bodyText.toLowerCase().includes("cookie check") || bodyText.toLowerCase().includes("action required") || response.status === 403 || response.status === 302) {
           console.warn("Proxy block detected, falling back to direct client-side Google Drive API upload...");
           const directFile = await uploadDirectToDrive(file, category, driveToken);
           toast.success("Uploaded directly to your Google Drive! (Bypassed system proxy)", { duration: 4000 });
@@ -411,7 +461,8 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
         data = JSON.parse(bodyText);
       } catch (e) {
         console.error("Invalid JSON from Drive Upload:", response.status, bodyText);
-        if (bodyText.includes("Cookie check") || bodyText.includes("Action required")) {
+        const lowerBody = bodyText.toLowerCase();
+        if (lowerBody.includes("cookie check") || lowerBody.includes("action required")) {
           console.warn("Proxy block detected, falling back to direct client-side Google Drive API upload...");
           const directFile = await uploadDirectToDrive(file, category, driveToken);
           toast.success("Uploaded directly to your Google Drive! (Bypassed system proxy)", { duration: 4000 });
@@ -422,7 +473,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
       return { url: data.url, fileName: data.fileName, fileId: data.fileId, mimeType: file.type };
     } catch (error: any) {
       console.error('Drive Upload Error:', error);
-      if (error.name === 'TypeError' || error.message?.includes("Failed to fetch") || error.message?.includes("Cookie check") || error.message?.includes("cookies")) {
+      if (error.name === 'TypeError' || error.message?.toLowerCase().includes("failed to fetch") || error.message?.toLowerCase().includes("cookie check") || error.message?.toLowerCase().includes("cookies")) {
         try {
           console.warn("Fetch failed, attempting direct client-side Google Drive API upload fallback...");
           const directFile = await uploadDirectToDrive(file, category, driveToken);
@@ -778,7 +829,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                                         <div className="flex items-center gap-2 overflow-hidden">
                                            <div 
                                              className="w-8 h-8 rounded-lg bg-emerald-100 flex-shrink-0 overflow-hidden cursor-pointer hover:ring-2 hover:ring-emerald-400 transition-all"
-                                             onClick={() => openPreview(r.driveUrl!, r.fileName!)}
+                                             onClick={() => openPreview(r.pendingFile || r.driveUrl!, r.fileName!)}
                                            >
                                              {r.pendingFile ? (
                                                <FileThumbnail file={r.pendingFile} />
@@ -794,7 +845,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                                              size="sm" 
                                              variant="ghost" 
                                              className="h-7 px-2 text-[9px] font-bold uppercase text-emerald-600 hover:bg-emerald-100"
-                                             onClick={() => openPreview(r.driveUrl!, r.fileName!)}
+                                             onClick={() => openPreview(r.pendingFile || r.driveUrl!, r.fileName!)}
                                            >
                                              View
                                            </Button>
@@ -966,7 +1017,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                            <div className="space-y-2">
                               <Label className="micro-label">Entity</Label>
                               <Select 
-                                value={item.entity} 
+                                value={item.entity || ""} 
                                 onValueChange={(val) => {
                                   const updated = liquidationItems.map(li => li.id === item.id ? { ...li, entity: val as 'CCT' } : li);
                                   setLiquidationItems(updated);
@@ -983,7 +1034,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                            <div className="space-y-2 col-span-2">
                               <Label className="micro-label">Department</Label>
                               <Select 
-                                value={item.department} 
+                                value={item.department || ""} 
                                 onValueChange={(val) => {
                                   const updated = liquidationItems.map(li => li.id === item.id ? { ...li, department: val as 'Corporate' } : li);
                                   setLiquidationItems(updated);
@@ -1064,7 +1115,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                            <div className="space-y-2">
                               <Label className={`micro-label ${errors?.account ? "text-red-500 font-bold" : ""}`}>Account</Label>
                               <Select 
-                                value={item.account} 
+                                value={item.account || ""} 
                                 onValueChange={(val) => {
                                   const updated = liquidationItems.map(li => li.id === item.id ? { ...li, account: val } : li);
                                   setLiquidationItems(updated);
@@ -1270,7 +1321,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                                      <div className="flex items-center gap-2 overflow-hidden">
                                         <div 
                                           className="w-10 h-10 rounded-lg bg-emerald-100 flex-shrink-0 overflow-hidden cursor-pointer hover:ring-2 hover:ring-emerald-400 transition-all"
-                                          onClick={() => openPreview(item.driveUrl!, item.fileName!)}
+                                          onClick={() => openPreview(item.pendingFile || item.driveUrl!, item.fileName!)}
                                         >
                                           {item.pendingFile ? (
                                             <FileThumbnail file={item.pendingFile} />
@@ -1284,7 +1335,7 @@ const LiquidationWorkflow: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                                             size="sm" 
                                             variant="link" 
                                             className="h-auto p-0 text-[8px] font-black uppercase text-emerald-500 justify-start"
-                                            onClick={() => openPreview(item.driveUrl!, item.fileName!)}
+                                            onClick={() => openPreview(item.pendingFile || item.driveUrl!, item.fileName!)}
                                           >
                                             Preview Image
                                           </Button>

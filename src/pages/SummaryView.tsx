@@ -17,10 +17,12 @@ import {
   User,
   Sparkles,
   AlertCircle,
-  Settings
+  Settings,
+  Eye,
+  X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 
 import { useAuth } from '../components/auth/AuthProvider';
 import { db, handleFirestoreError, OperationType, getErrorMessage } from '../lib/firebase';
@@ -46,6 +48,26 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
 
   const [outOfPocketExpense, setOutOfPocketExpense] = React.useState(entry.outOfPocketExpense || 0);
   const [isSavingExpense, setIsSavingExpense] = React.useState(false);
+
+  const [previewFile, setPreviewFile] = React.useState<{ url: string; name: string } | null>(null);
+
+  const isDriveUrl = (url: string) => url ? url.includes('drive.google.com') : false;
+
+  const getDriveFileId = (url: string) => {
+    if (!url) return null;
+    const match = url.match(/\/d\/([^\/]+)/) || url.match(/id=([^&]+)/);
+    return match ? match[1] : null;
+  };
+
+  const getEmbedUrl = (url: string) => {
+    if (isDriveUrl(url)) {
+      const fileId = getDriveFileId(url);
+      if (fileId) {
+        return `https://drive.google.com/file/d/${fileId}/preview`;
+      }
+    }
+    return url;
+  };
 
   React.useEffect(() => {
     setOutOfPocketExpense(entry.outOfPocketExpense || 0);
@@ -560,14 +582,23 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
                                 <div className="text-lg font-black font-data text-emerald-700">₱{r.amount.toLocaleString()}</div>
                              </div>
                              {(r.driveUrl || r.tempUrl) && (
-                               <a 
-                                 href={r.driveUrl || r.tempUrl} 
-                                 target="_blank" 
-                                 rel="noreferrer"
-                                 className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all"
-                               >
-                                  <ExternalLink className="h-4 w-4" />
-                               </a>
+                               <div className="flex items-center gap-2">
+                                 <button 
+                                   onClick={() => setPreviewFile({ url: r.driveUrl || r.tempUrl || "", name: r.purpose || "Reimbursement Receipt" })}
+                                   className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all cursor-pointer"
+                                   title="Preview Attachment"
+                                 >
+                                   <Eye className="h-4 w-4" />
+                                 </button>
+                                 <a 
+                                   href={r.driveUrl || r.tempUrl} 
+                                   target="_blank" 
+                                   rel="noreferrer"
+                                   className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all"
+                                 >
+                                    <ExternalLink className="h-4 w-4" />
+                                 </a>
+                               </div>
                              )}
                           </div>
                        </div>
@@ -604,14 +635,23 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
                                 {item.requiresProofSlip && <Badge variant="outline" className="text-[8px] bg-amber-50 text-amber-600 border-amber-100">PROOF SLIP</Badge>}
                              </div>
                              {(item.receiptUrl || item.driveUrl || item.tempUrl) && (
-                               <a 
-                                 href={item.receiptUrl || item.driveUrl || item.tempUrl} 
-                                 target="_blank" 
-                                 rel="noreferrer"
-                                 className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
-                               >
-                                  <ExternalLink className="h-4 w-4" />
-                               </a>
+                               <div className="flex items-center gap-2">
+                                 <button 
+                                   onClick={() => setPreviewFile({ url: item.receiptUrl || item.driveUrl || item.tempUrl || "", name: item.supplierName || "Expense Receipt" })}
+                                   className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all cursor-pointer"
+                                   title="Preview Attachment"
+                                 >
+                                   <Eye className="h-4 w-4" />
+                                 </button>
+                                 <a 
+                                   href={item.receiptUrl || item.driveUrl || item.tempUrl} 
+                                   target="_blank" 
+                                   rel="noreferrer"
+                                   className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                                 >
+                                    <ExternalLink className="h-4 w-4" />
+                                 </a>
+                               </div>
                              )}
                           </div>
                        </div>
@@ -657,6 +697,100 @@ const SummaryView: React.FC<Props> = ({ entry, onBack }) => {
         <CardFooter className="p-10 pt-0 bg-slate-50/50 flex justify-end items-center text-xs font-black uppercase tracking-widest text-slate-400 border-t border-slate-50">
            <div>Ref: {entry.id}</div>
         </CardFooter>
+
+       {/* Interactive Attachment Preview Modal */}
+       <AnimatePresence>
+         {previewFile && (
+           <motion.div 
+             initial={{ opacity: 0 }}
+             animate={{ opacity: 1 }}
+             exit={{ opacity: 0 }}
+             className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8 bg-slate-950/95 backdrop-blur-md"
+             onClick={() => setPreviewFile(null)}
+           >
+             <motion.div 
+               initial={{ scale: 0.95, opacity: 0, y: 20 }}
+               animate={{ scale: 1, opacity: 1, y: 0 }}
+               exit={{ scale: 0.95, opacity: 0, y: 20 }}
+               className="relative max-w-4xl w-full h-full max-h-[90vh] bg-white rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col border border-white/10"
+               onClick={(e) => e.stopPropagation()}
+             >
+               {/* Header */}
+               <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+                 <div className="flex items-center gap-4">
+                   <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                     <Eye className="h-5 w-5 text-indigo-600" />
+                   </div>
+                   <div className="space-y-0.5">
+                     <h3 className="text-navy-900 font-bold tracking-tight">Attachment Preview</h3>
+                     <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">{previewFile.name}</p>
+                   </div>
+                 </div>
+                 <Button 
+                   variant="ghost" 
+                   size="icon" 
+                   onClick={() => setPreviewFile(null)} 
+                   className="rounded-full w-10 h-10 hover:bg-slate-100 transition-colors"
+                 >
+                   <X className="h-5 w-5 text-slate-500" />
+                 </Button>
+               </div>
+
+               {/* Preview Area */}
+               <div className="flex-1 overflow-auto bg-slate-900 flex items-center justify-center relative p-8">
+                 {isDriveUrl(previewFile.url) ? (
+                   <iframe 
+                     src={getEmbedUrl(previewFile.url)} 
+                     className="w-full h-full min-h-[500px] rounded-2xl border-none shadow-2xl bg-white"
+                     allow="autoplay"
+                     title="Document Preview"
+                   />
+                 ) : (
+                   <motion.div 
+                     initial={{ opacity: 0, scale: 0.9 }}
+                     animate={{ opacity: 1, scale: 1 }}
+                     className="relative group"
+                   >
+                     <img 
+                       src={previewFile.url} 
+                       alt="preview" 
+                       className="max-w-full max-h-[65vh] object-contain rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)]"
+                       onError={(e) => {
+                         const target = e.target as HTMLImageElement;
+                         target.src = "https://placehold.co/600x400?text=Preview+Not+Available";
+                       }}
+                     />
+                   </motion.div>
+                 )}
+               </div>
+
+               {/* Footer */}
+               <div className="px-8 py-6 bg-white border-t border-slate-100 flex items-center justify-between shrink-0">
+                  <div className="hidden md:flex items-center gap-2">
+                     <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Secure Cloud Preview</span>
+                  </div>
+                  <div className="flex items-center gap-3 w-full md:w-auto">
+                    <Button variant="outline" onClick={() => setPreviewFile(null)} className="flex-1 md:flex-none rounded-2xl font-bold h-12 px-8 border-2 border-slate-200 hover:bg-slate-50 transition-all">
+                      Close
+                    </Button>
+                    {previewFile.url.startsWith('http') && (
+                      <a 
+                        href={previewFile.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="flex-1 md:flex-none h-12 px-8 rounded-2xl font-bold bg-navy-900 text-white hover:bg-navy-800 transition-all flex items-center justify-center gap-2 text-sm shadow-lg hover:shadow-xl hover:translate-y-[-1px] active:translate-y-[1px]"
+                      >
+                         Open in Drive
+                         <ExternalLink className="h-4 w-4" />
+                      </a>
+                    )}
+                  </div>
+               </div>
+             </motion.div>
+           </motion.div>
+         )}
+       </AnimatePresence>
       </Card>
     </div>
   );

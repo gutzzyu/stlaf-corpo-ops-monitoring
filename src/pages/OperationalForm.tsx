@@ -253,7 +253,7 @@ const OperationalForm: React.FC<Props> = ({ entry, onBack, onSuccess }) => {
                 </div>
                 <div className="space-y-2">
                   <Label className="micro-label">Department</Label>
-                  <Select onValueChange={(val) => setValue('department', val)} value={watchedDepartment || entry?.department || userData?.department}>
+                  <Select onValueChange={(val) => setValue('department', val)} value={watchedDepartment || entry?.department || userData?.department || ""}>
                     <SelectTrigger className={`h-12 rounded-xl bg-slate-50 border-2 font-bold text-navy-900 transition-all ${
                       errors.department 
                         ? 'border-red-500 bg-red-50/20 focus:ring-red-500 focus-visible:ring-red-500' 
